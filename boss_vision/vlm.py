@@ -202,6 +202,12 @@ def normalize(sections) -> dict:
         if kind in ("education", "edu"):
             if not any(item.get(k) for k in ("school", "major", "degree", "period")):
                 continue
+            # 过滤假教育条目：没有校名、时间又不是年份区间的（多是头部「22岁|本科|应届生」被误判）
+            school = (item.get("school") or "").strip()
+            period = (item.get("period") or "").strip()
+            year_range = bool(__import__("re").search(r"^\s*\d{4}\s*[-–~至]\s*\d{4}\s*$", period))
+            if not school and not year_range:
+                continue
             education.append({
                 "school": (item.get("school") or "").strip(),
                 "major": (item.get("major") or "").strip(),
@@ -222,6 +228,16 @@ def normalize(sections) -> dict:
         }
         if not (entry["company"] or entry["title"] or entry["period"] or entry["descriptions"]):
             continue
+        # 碎片：没有公司也没有时间，只有零散职责 -> 多半是上一屏的续行，丢掉
+        if not entry["company"] and not entry["period"]:
+            continue
+        # 公司名其实是职位（没有机构后缀、含职位词）-> 归到 title
+        if entry["company"] and not any(w in entry["company"] for w in ("公司", "集团", "工作室",
+                                                                        "事务所", "店", "厂", "中心")):
+            if any(w in entry["company"] for w in ("运营", "客服", "销售", "助理", "专员", "教师",
+                                                   "摄影", "剪辑", "设计", "主管", "经理", "实习")):
+                entry["title"] = (entry["company"] + " " + entry["title"]).strip()
+                entry["company"] = ""
         {"project": projects, "campus": campus}.get(kind, work).append(entry)
 
     return {"work": work, "education": education, "projects": projects, "campus": campus}
