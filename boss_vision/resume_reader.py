@@ -614,8 +614,8 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             break
 
         parts = vlm.normalize(raw["sections"])
-        if step == 0:
-            res.name = _name_from_vlm(raw["sections"]) or res.name
+        if step == 0 and (raw.get("name") or "").strip():
+            res.name = _name_from_vlm(raw)
         vlm.merge_screens(work, parts["work"])
         vlm.merge_screens(projects, parts["projects"])
         vlm.merge_screens(campus, parts["campus"])
@@ -630,6 +630,9 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         usage_total["completion_tokens"] += int(u.get("completion_tokens") or 0)
         usage_total["screens"] += 1
         log(f"  第 {step + 1} 屏：工作 {len(parts['work'])} 条 / 教育 {len(parts['education'])} 条")
+
+        if step == 0 and not res.name:
+            res.name = _name_by_ocr(img, band, log=log)
 
         frame = img.tobytes()
         moved = prev_frame is not None and frame != prev_frame
@@ -662,9 +665,12 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     res.section_seen = (["work"] if work else []) + (["edu"] if education else [])
 
     # 复核判定（与 OCR 版一致）
+    if not res.name:
+        res.review_reason = "姓名未识别"
     if not education:
         res.incomplete = True
-        res.review_reason = f"教育经历未读到（{res.stopped_reason or '未知原因'}）"
+        res.review_reason = ((res.review_reason + "；") if res.review_reason else "") + \
+            f"教育经历未读到（{res.stopped_reason or '未知原因'}）"
     if not work:
         res.review_reason = (res.review_reason + "；" if res.review_reason else "") + "工作经历 0 条"
     else:
@@ -682,9 +688,27 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     return res
 
 
-def _name_from_vlm(sections: list[dict]) -> str:
-    """姓名不在结构化输出里，留给 guess_name；这里返回空串即可（后续可扩展）。"""
-    return ""
+def _name_by_ocr(img, band, log=print) -> str:
+    """姓名兜底：只在顶部一小块跑 OCR（约 0.2 秒），模型没读到时用。"""
+    try:
+        engine = vision.load_ocr()
+        if engine is None:
+            return ""
+        region = vision.Rect(band.x, band.y, min(360, band.w), min(70, band.h))
+        items = vision.ocr_crop(engine, img, region)
+        return guess_name(items) or guess_name_from_text(
+            "\n".join(it["text"] for it in items))
+    except Exception as exc:
+        log(f"  [warn] 姓名 OCR 兜底失败：{exc}")
+        return ""
+
+
+def _name_from_vlm(raw: dict) -> str:
+    """视觉模型直接在 JSON 里返回姓名；这里做一次兜底清洗。"""
+    name = (raw.get("name") or "").strip()
+    for junk in ("刚刚活跃", "今日活跃", "本周活跃", "在线", "月内到岗", "随时到岗"):
+        name = name.replace(junk, "")
+    return name.strip(" ·|")
 
 
 def slice_sections(text: str) -> dict[str, str]:

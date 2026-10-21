@@ -36,7 +36,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 SCREENS = [
-    {"sections": [
+    {"name": "测试候选人", "sections": [
         {"section": "work", "company": "福州甲科技有限公司", "title": "运营",
          "period": "2025.02-至今", "responsibilities": ["负责店铺日常运营"], "tags": ["电商运营"]},
     ]},
@@ -133,6 +133,7 @@ def main() -> int:
         winenv.grab_window, winenv.scroll = real_grab, real_scroll
 
     check("读取完成", rr.complete, rr.stopped_reason)
+    check("读到姓名", rr.name == "测试候选人", repr(rr.name))
     check("读到教育经历", bool(rr.education) and rr.education[0]["school"] == "厦门大学",
           str(rr.education))
     check("工作经历 2 段", len(rr.work) == 2, str([w["company"] for w in rr.work]))

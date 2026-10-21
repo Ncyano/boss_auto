@@ -45,12 +45,14 @@ DEFAULT_CONFIG = {
 PROMPT = """你是简历信息抽取器。图片是 BOSS 直聘「线上简历」弹窗的一屏截图（可能只截到某段经历的一部分）。
 
 请只输出 JSON，不要解释、不要 markdown 代码块。结构：
-{"sections":[
+{"name":"","sections":[
   {"section":"work","company":"","title":"","period":"","employment":"","responsibilities":[],"tags":[]},
   {"section":"education","school":"","major":"","degree":"","period":""}
 ]}
 
 规则：
+0. name 是候选人的姓名（简历弹窗顶部「张三 刚刚活跃」那种），不要带「在线/刚刚活跃/岁」等字样；
+   这一屏看不到姓名就留空字符串。
 1. section 只能是 work / education / project / campus / other。
 2. work = 工作经历（含实习）；project = 项目经历/项目经验；campus = 校园经历/社团经历/在校经历；education = 教育经历。
 3. company 只填单位名称；职位放 title；时间放 period（原样抄，如「2025.03-至今」）。
@@ -172,7 +174,8 @@ def read_screen(bgr, cfg: dict | None = None, log=print) -> dict:
                 text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
             parsed = extract_json(text)
             if parsed is not None:
-                return {"sections": parsed.get("sections") or [],
+                return {"name": (parsed.get("name") or "").strip(),
+                        "sections": parsed.get("sections") or [],
                         "raw": text, "usage": resp.get("usage") or {}}
             last_error = "模型输出不是合法 JSON"
         except urllib.error.HTTPError as exc:
@@ -298,6 +301,10 @@ def self_test() -> int:
     check("配置文件已生成", CONFIG.exists(), str(CONFIG))
     check("默认 base_url 指向通义", "dashscope" in cfg["base_url"], cfg["base_url"])
     check("key 状态可判断", isinstance(available(), bool), f"available={available()}")
+
+    print("\n[1b] 姓名抽取")
+    check("能从模型输出取 name",
+          (extract_json('{"name":"吴欣烨","sections":[]}') or {}).get("name") == "吴欣烨")
 
     print("\n[2] JSON 抠取")
     check("裸 JSON", extract_json('{"sections":[]}') is not None)
