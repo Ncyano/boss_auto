@@ -33,6 +33,11 @@ import extract
 SECTIONS = {
     "工作经历": "work",
     "实习经历": "work",
+    "社团经历": "campus",
+    "在校经历": "campus",
+    "校园经历": "campus",
+    "项目经历": "project",
+    "实习经历": "work",
     "项目经历": "project",
     "校园经历": "campus",
     "在校经历": "campus",
@@ -52,6 +57,21 @@ END_PUNCT = ("。", "！", "？", "；", ";", "：", ":")
 TAG_MAX_LEN = 12
 
 
+TITLE_WORDS = ("运营", "助理", "专员", "教师", "老师", "摄影", "摄像", "剪辑", "客服", "销售",
+               "设计", "编辑", "主管", "经理", "前台", "导购", "工程师", "实习", "编导", "美工",
+               "店长", "主播", "中控", "场控", "助播", "文案", "文员", "会计", "出纳", "助教")
+
+
+def _core_name(text: str) -> str:
+    """比对公司名时去掉粘在后面的职位词：小友酒庄销售专员 -> 小友酒庄。"""
+    t = (text or "").strip()
+    for word in sorted(TITLE_WORDS, key=len, reverse=True):
+        if t.endswith(word) and len(t) > len(word) + 1:
+            t = t[: -len(word)]
+            break
+    return t.strip(" 丨|·-—")
+
+
 def _similar(a: str, b: str, threshold: float = 0.86) -> bool:
     a, b = (a or "").strip(), (b or "").strip()
     if not a or not b:
@@ -65,6 +85,41 @@ def _similar(a: str, b: str, threshold: float = 0.86) -> bool:
 
 def _norm_period(period: str) -> str:
     return re.sub(r"[\s　]", "", period or "")
+
+
+DATE_TOKEN = re.compile(r"\d{4}(?:[./-]\d{1,2})?")
+
+
+def _split_dates(text: str) -> tuple[str, tuple]:
+    """把时间片段抠出来：返回（去掉时间的正文, 时间元组）。
+
+    比较"是不是同一行重复"时只看正文 —— 否则「甲公司 运营 2024.01-2024.06」和
+    「乙公司 运营 2024.01-2024.06」会被当成重复而丢掉一家真实公司。
+    """
+    dates = tuple(DATE_TOKEN.findall(text or ""))
+    body = DATE_TOKEN.sub("", text or "")
+    body = re.sub(r"[\s　丨|·\-—至到]+", "", body)
+    return body, dates
+
+
+def _near_dup_any(text: str, recent: list[str], threshold: float = 0.9) -> bool:
+    """和最近几屏的行"几乎一样"就当作重复（正文相同且时间相同）。"""
+    t = (text or "").strip()
+    if not t:
+        return True
+    body, dates = _split_dates(t)
+    if not body:
+        return False                       # 纯时间行不做跨屏判重
+    for old in recent:
+        old_body, old_dates = _split_dates(old)
+        if not old_body or old_dates != dates:
+            continue
+        if abs(len(old_body) - len(body)) > 6:
+            continue
+        if _similar(old_body, body, threshold):
+            return True
+    return False
+
 
 
 ORG_SUFFIXES = ("股份有限公司", "有限责任公司", "有限公司", "集团", "公司", "工作室",
@@ -142,6 +197,8 @@ class StreamParser:
         self.tail_screen: int = -1
         self.section_seen: list[str] = []
         self.conflicts: list[str] = []          # 跨屏冲突：时间段相同但公司不同、字段矛盾等
+        self._recent: list[str] = []            # 上一屏的行，用于跨屏重叠去重
+        self._seen: set[str] = set()
 
     # ---------- 对外 ----------
 
@@ -151,12 +208,34 @@ class StreamParser:
         先按纵坐标把 OCR 框聚成"视觉行"，再把同一行从左到右拼成一句话 ——
         公司名、职位、右对齐的时间常在同一行但被 OCR 拆成几个框。
         """
-        for text in self._rows(items):
-            if text:
-                self._feed_line(text, screen, overlap)
+        fresh_pieces: list[list[str]] = []
+        for pieces in self._rows(items):
+            if not pieces:
+                continue
+            text = " ".join(pieces)
+            # 同一行在相邻屏重复出现（页面没滚动/滚动不足）-> 丢掉，否则章节状态会把它归错类
+            if text in self._seen or _near_dup_any(text, self._recent):
+                continue
+            fresh_pieces.append(pieces)
+
+        self._seen.update(" ".join(p) for p in fresh_pieces)
+        self._recent = [" ".join(p) for p in fresh_pieces][-80:]
+
+        for pieces in fresh_pieces:
+            # 一行里可能混着小节标题（「工作经历」在左边距，第一条经历在同一行右侧）
+            heads = [p for p in pieces if section_of(p)]
+            if heads:
+                for head in heads:
+                    self._feed_line(head, screen, overlap)
+                rest = [p for i, p in enumerate(pieces) if p not in heads or pieces.index(p) != i]
+                rest = [p for p in pieces if not section_of(p)]
+                if rest:
+                    self._feed_line(" ".join(rest), screen, overlap)
+            else:
+                self._feed_line(" ".join(pieces), screen, overlap)
 
     @staticmethod
-    def _rows(items: list[dict], tol: int = 10) -> list[str]:
+    def _rows(items: list[dict], tol: int = 10) -> list[list[str]]:
         rows: list[list[dict]] = []
         for it in sorted(items, key=lambda i: (i["box"][1], i["box"][0])):
             placed = False
@@ -170,7 +249,7 @@ class StreamParser:
         out = []
         for row in rows:
             row.sort(key=lambda i: i["box"][0])
-            out.append(" ".join(i["text"].strip() for i in row if i["text"].strip()))
+            out.append([i["text"].strip() for i in row if i["text"].strip()])
         return out
 
     def close(self) -> None:
@@ -179,13 +258,44 @@ class StreamParser:
         self._commit()
         self.tail = ""
 
+    def _all_entries(self) -> list[StreamEntry]:
+        """已提交条目 + 还在读取中的当前条目（逐屏读的时候当前条目也应有输出）。"""
+        out = list(self.entries)
+        if self.current is not None and not self.current.is_empty():
+            out.append(self.current)
+        return out
+
     @property
     def work(self) -> list[dict]:
-        return [self._as_work(e) for e in self.entries if e.section in ("work", "project", "campus")]
+        out = []
+        for e in self._all_entries():
+            if e.section not in ("work", "project", "campus"):
+                continue
+            if not (e.company or e.title or e.period or e.descriptions):
+                continue                      # 空条目（占位后没拿到任何内容）
+            if e.company and any(ch in e.company for ch in "。；，"):
+                e.title = (e.company + " " + e.title).strip()   # 公司名里带句读 -> 其实是职责/项目行
+                e.company = ""
+            out.append(self._as_work(e))
+        return out
 
     @property
     def education(self) -> list[dict]:
-        return [self._as_edu(e) for e in self.entries if e.section == "edu"]
+        """教育条目出口统一清洗：过滤公司样条目、把纯学历词当学历。"""
+        out = []
+        for e in self._all_entries():
+            if e.section != "edu":
+                continue
+            name = (e.school or "").strip()
+            if name and ("丨" in name or re.search(r"(公司|集团|工作室|事务所|门店|店|厂|中心)$", name)):
+                continue                     # 教育章节里混进来的工作条目，直接丢掉
+            if name and extract.degree_level_only(name):
+                e.degree = e.degree or name  # 「初中及以下」这种是学历不是学校
+                e.school = ""
+            if not (e.school or e.degree or e.period):
+                continue
+            out.append(self._as_edu(e))
+        return out
 
     # ---------- 内部 ----------
 
@@ -289,6 +399,15 @@ class StreamParser:
     def _split_header(self, head: str, period: str) -> dict:
         if self.section == "edu":
             school, major, degree = extract.split_edu_token(head)
+            # 教育章节里出现「XX公司丨职位」说明这一屏其实还是工作经历（章节回跳）
+            if re.search(r"(公司|集团|工作室|事务所|门店|店|厂)$", school) or "丨" in head:
+                self.conflicts.append(f"教育章节里出现公司样条目：{head[:24]}（按工作经历处理）")
+                self.section = "work"
+                company, title = _split_org(head)
+                return {"company": company, "title": title, "period": period}
+            level = extract.degree_level_only(school) if school else False
+            if level:
+                return {"school": "", "major": "", "degree": school, "period": period}
             return {"school": school, "major": major, "degree": degree, "period": period}
         company, title = _split_org(head)
         return {"company": company, "title": title, "period": period}
@@ -378,8 +497,8 @@ class StreamParser:
         for existing in self.entries:
             if existing.section != entry.section:
                 continue
-            same_name = _similar(existing.company or existing.school,
-                                 entry.company or entry.school, threshold=0.8)
+            same_name = _similar(_core_name(existing.company or existing.school),
+                                 _core_name(entry.company or entry.school), threshold=0.8)
             same_period = _norm_period(existing.period) == _norm_period(entry.period)
             missing_name = not (existing.company or existing.school) or not (entry.company or entry.school)
             shared_text = any(_similar(a, b)
