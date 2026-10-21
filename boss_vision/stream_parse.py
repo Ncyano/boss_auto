@@ -37,8 +37,10 @@ SECTIONS = {
     "在校经历": "campus",
     "校园经历": "campus",
     "项目经历": "project",
+    "项目经验": "project",
     "实习经历": "work",
     "项目经历": "project",
+    "项目经验": "project",
     "校园经历": "campus",
     "在校经历": "campus",
     "教育经历": "edu",
@@ -267,17 +269,38 @@ class StreamParser:
 
     @property
     def work(self) -> list[dict]:
+        """只返回「工作经历」（含实习经历）。项目/校园经历单独存放，不能混进公司列。"""
         out = []
         for e in self._all_entries():
-            if e.section not in ("work", "project", "campus"):
+            if e.section != "work":
                 continue
             if not (e.company or e.title or e.period or e.descriptions):
                 continue                      # 空条目（占位后没拿到任何内容）
             if e.company and any(ch in e.company for ch in "。；，"):
                 e.title = (e.company + " " + e.title).strip()   # 公司名里带句读 -> 其实是职责/项目行
                 e.company = ""
+            if e.company and ("丨" in e.company or "|" in e.company):
+                left, _, right = e.company.replace("|", "丨").partition("丨")
+                e.company = left.strip()
+                e.title = (right.strip() + " " + e.title).strip()
+            # 去掉开头 OCR 带出来的杂字：1国内电商运营 / 2.数据采集实习
+            e.title = re.sub(r"^[0-9０-９]{1,2}[、.．,，]?\s*(?=\D)", "", e.title or "").strip()
+            e.company = re.sub(r"^[0-9０-９]{1,2}[、.．,，]?\s*(?=\D)", "", e.company or "").strip()
+
+            if e.company and not re.search(r"(公司|集团|工作室|事务所|研究院|中心|门店|店|厂|社)$",
+                                           e.company) and self._looks_like_title(e.company):
+                e.title = (e.company + " " + e.title).strip()   # 没有机构后缀却像职位 -> 当职位
+                e.company = ""
             out.append(self._as_work(e))
         return out
+
+    @property
+    def projects(self) -> list[dict]:
+        return [self._as_work(e) for e in self._all_entries() if e.section == "project"]
+
+    @property
+    def campus(self) -> list[dict]:
+        return [self._as_work(e) for e in self._all_entries() if e.section == "campus"]
 
     @property
     def education(self) -> list[dict]:
