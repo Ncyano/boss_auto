@@ -28,3 +28,6 @@ desktop.ini
 
 # ---- 日志 ----
 *.log
+
+# 视觉模型密钥配置（本地私有）
+data/vlm-config.json
