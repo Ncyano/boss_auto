@@ -332,7 +332,13 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             print(f"     [warn] 截图保存失败：{exc}")
 
 
+    last_record_at: list[float] = []
+
     def dump_results(with_csv: bool = True) -> None:
+        # 距最后一次记录超过 30 分钟 -> 这是"很久以前跑完的进程在退出时回写"，直接跳过
+        if last_record_at and (time.time() - last_record_at[0]) > 1800:
+            print("[跳过] 本进程的结果已过期（超过 30 分钟未更新），不再回写")
+            return
         """把已处理的结果落盘：results.json + 带工作内容的 summary.csv。
 
         注册到 atexit，所以 Ctrl+C / 点停止中断时也会把已有结果写出来。
@@ -592,6 +598,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 print(f"     读到正文 {len(text)} 字；切出小节 {list(secs)}")
                 (OUT / f"{stamps}-resume-{handled + 1}.txt").write_text(text, encoding="utf-8")
             results.append(record)
+            last_record_at[:] = [time.time()]
             dump_results(with_csv=False)   # 增量只写 json，csv 在结束时统一生成
 
             if opened and not close_modal(
