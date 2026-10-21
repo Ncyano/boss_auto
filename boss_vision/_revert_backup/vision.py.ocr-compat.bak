@@ -1,0 +1,280 @@
+"""BOSS 招聘端「画面识别」层。
+
+设计原则
+--------
+* 只看屏幕，不读 DOM：窗口抓图 -> 颜色/形状/文字识别 -> 输出元素相对坐标。
+* 本文件不含任何点击代码。点击在 driver.py，且必须显式 --live。
+* 进程启动即声明 DPI 感知；坐标以「窗口左上角」为原点。
+
+用法
+----
+    python vision.py scan --ocr          # 抓一帧、识别、存标注图 + json
+    python vision.py scan --screen       # 不用窗口，直接抓整屏（调试用）
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+_DEPS = Path(__file__).parent / ".deps"
+if _DEPS.is_dir():
+    sys.path.insert(0, str(_DEPS))
+
+import winenv
+
+OUT = Path(__file__).parent / "runs"
+
+# 青绿色「打招呼」按钮的判据（BOSS 主色，两套截图实测稳定）
+TEAL = dict(r_max=110, g_min=140, b_min=130, rg_gap=60, br_gap=50)
+
+
+@dataclass
+class Rect:
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def cx(self) -> int:
+        return self.x + self.w // 2
+
+    @property
+    def cy(self) -> int:
+        return self.y + self.h // 2
+
+
+def _runs(mask: np.ndarray, min_len: int) -> list[tuple[int, int]]:
+    idx = np.flatnonzero(mask)
+    if idx.size == 0:
+        return []
+    br = np.flatnonzero(np.diff(idx) > 1)
+    s = np.r_[idx[0], idx[br + 1]]
+    e = np.r_[idx[br], idx[-1]]
+    return [(int(a), int(b)) for a, b in zip(s, e) if b - a + 1 >= min_len]
+
+
+def detect_teal(img: np.ndarray, min_area: int = 400) -> list[Rect]:
+    b, g, r = (img[:, :, i].astype(int) for i in range(3))
+    mask = (
+        (r < TEAL["r_max"])
+        & (g > TEAL["g_min"])
+        & (b > TEAL["b_min"])
+        & (g - r > TEAL["rg_gap"])
+        & (b - r > TEAL["br_gap"])
+    )
+    boxes: list[Rect] = []
+    for y0, y1 in _runs(mask.any(axis=1), 8):
+        band = mask[y0 : y1 + 1]
+        for x0, x1 in _runs(band.any(axis=0), 8):
+            sub = mask[y0 : y1 + 1, x0 : x1 + 1]
+            if sub.sum() >= min_area:
+                boxes.append(Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1))
+    return boxes
+
+
+def list_buttons(boxes: list[Rect]) -> list[Rect]:
+    """列表卡片右侧的「打招呼」小按钮（实测 92x32；宽度 <80 的多为文字高亮，需排除）。"""
+    return sorted([b for b in boxes if 80 <= b.w <= 170 and 26 <= b.h <= 60], key=lambda b: b.cy)
+
+
+def wide_buttons(boxes: list[Rect]) -> list[Rect]:
+    """简历弹窗侧栏里的「打招呼」大按钮（实测 285x40）。"""
+    return [b for b in boxes if b.w >= 200 and 25 <= b.h <= 70]
+
+
+def card_for(button: Rect, card_w: int = 1212, top_offset: int = 39) -> Rect:
+    """由「打招呼」按钮反推卡片区域。
+
+    实测（2560x1400 窗口）：按钮贴卡片右缘（右缘再外扩 38px），卡片高 172px，
+    按钮垂直中心比卡片顶边低 39px。全部用**按钮相对偏移**表达，卡片位置变了也不影响。
+    """
+    left = max(0, button.x + button.w + 38 - card_w)
+    return Rect(left, max(0, button.cy - top_offset), card_w, 172)
+
+
+def click_into_resume(button: Rect) -> tuple[int, int]:
+    """点开线上简历的落点：卡片中部偏左的「时间/经历」文字区，避开按钮与公司名链接。"""
+    return button.x - 560, button.cy + 40
+
+
+def close_button(wide: Rect) -> tuple[int, int]:
+    """简历弹窗右上角的 ✕ 关闭按钮。
+
+    实测：相对侧栏大「打招呼」按钮的右上角偏移 (+14, -84)，即 (1908, 168)。
+    Esc 在 BOSS 这个弹窗上无效，必须点这个 ✕ 或遮罩。
+    """
+    return wide.x + wide.w + 14, wide.y - 84
+
+
+def guess_state(btns: list[Rect], wides: list[Rect]) -> str:
+    """粗判当前处于哪个界面，供后续编排用。"""
+    if wides:
+        return "resume_modal"
+    if len(btns) >= 2:
+        return "list"
+    if len(btns) == 1:
+        return "list_partial"
+    return "unknown"
+
+
+class _RapidEngine:
+    """把两代 RapidOCR 的输出统一成 [{text, score, box}]。
+
+    * rapidocr_onnxruntime 1.x：``RapidOCR()(img) -> (result, elapse)``，
+      result 形如 ``[[box, text, score], ...]``。
+    * rapidocr 2.x/3.x：``RapidOCR()(img) -> RapidOCROutput``，
+      取 ``.txts / .boxes / .scores``。
+    """
+
+    def __init__(self, raw, legacy: bool) -> None:
+        self.raw = raw
+        self.legacy = legacy
+        self.kind = "rapidocr_onnxruntime (1.x)" if legacy else "rapidocr (2.x/3.x)"
+
+    def __call__(self, bgr: np.ndarray) -> list[dict]:
+        out = self.raw(bgr)
+        pairs = []
+        if isinstance(out, tuple):  # 1.x
+            for item in (out[0] or []):
+                pairs.append((item[0], item[1], item[2]))
+        else:  # 2.x / 3.x
+            txts = getattr(out, "txts", None)
+            boxes = getattr(out, "boxes", None)
+            scores = getattr(out, "scores", None) or [None] * len(txts or [])
+            if txts and boxes is not None:
+                for box, text, score in zip(boxes, txts, scores):
+                    pairs.append((box, text, score))
+
+        results = []
+        for box, text, score in pairs:
+            if not text:
+                continue
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+            results.append(
+                {
+                    "text": str(text),
+                    "score": round(float(score), 3) if score is not None else 0.0,
+                    "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))],
+                }
+            )
+        return results
+
+
+def load_ocr():
+    """优先新版 ``rapidocr``，退回老版 ``rapidocr_onnxruntime``；都没有则返回 None。"""
+    errors = []
+    try:
+        from rapidocr import RapidOCR  # 2.x / 3.x
+
+        return _RapidEngine(RapidOCR(), legacy=False)
+    except Exception as exc:
+        errors.append(f"rapidocr: {exc}")
+    try:
+        from rapidocr_onnxruntime import RapidOCR  # 1.x
+
+        return _RapidEngine(RapidOCR(), legacy=True)
+    except Exception as exc:
+        errors.append(f"rapidocr_onnxruntime: {exc}")
+    print("[warn] OCR 不可用：" + " | ".join(errors), file=sys.stderr)
+    return None
+
+
+def ocr_crop(engine, img: np.ndarray, region: Rect | None = None) -> list[dict]:
+    crop = img if region is None else img[region.y : region.y + region.h, region.x : region.x + region.w]
+    if crop.size == 0:
+        return []
+    ox = 0 if region is None else region.x
+    oy = 0 if region is None else region.y
+    out = []
+    for item in engine(crop):
+        x0, y0, x1, y1 = item["box"]
+        out.append({"text": item["text"], "score": item["score"],
+                    "box": [x0 + ox, y0 + oy, x1 + ox, y1 + oy]})
+    return out
+
+
+def scan(ocr: bool, tag: str, use_window: bool) -> dict:
+    win = winenv.find_window("BOSS直聘") if use_window else None
+    if use_window and win is None:
+        return {"error": "没找到标题含「BOSS直聘」的可见窗口"}
+    origin = (0, 0)
+    if win:
+        _hwnd, rect, title = win
+        origin = (rect[0], rect[1])
+        img = winenv.grab_window(rect)
+    else:
+        img = winenv.grab_window((0, 0, *([int(v) for v in (2560, 1440)])))
+
+    boxes = detect_teal(img)
+    btns = list_buttons(boxes)
+    wides = wide_buttons(boxes)
+    state = guess_state(btns, wides)
+
+    engine = load_ocr() if ocr else None
+    items = []
+    for i, btn in enumerate(btns, 1):
+        card = card_for(btn)
+        texts = ocr_crop(engine, img, card) if engine else []
+        items.append({"index": i, "card": asdict(card), "greet_button": asdict(btn),
+                      "name_guess": texts[0]["text"] if texts else "", "texts": texts})
+
+    OUT.mkdir(exist_ok=True)
+    stem = OUT / f"{tag}-{time.strftime('%Y%m%d-%H%M%S')}"
+    ann = Image.fromarray(img[:, :, ::-1])
+    d = ImageDraw.Draw(ann)
+    for i, it in enumerate(items, 1):
+        c, b = it["card"], it["greet_button"]
+        d.rectangle([c["x"], c["y"], c["x"] + c["w"], c["y"] + c["h"]], outline=(0, 90, 255), width=3)
+        d.rectangle([b["x"], b["y"], b["x"] + b["w"], b["y"] + b["h"]], outline=(255, 0, 0), width=3)
+        d.text((c["x"] + 10, c["y"] + 8), f"#{i}", fill=(255, 0, 0))
+    for w_ in wides:
+        d.rectangle([w_.x, w_.y, w_.x + w_.w, w_.y + w_.h], outline=(255, 0, 255), width=3)
+    ann.save(f"{stem}-annotated.png")
+    Image.fromarray(img[:, :, ::-1]).save(f"{stem}.png")
+
+    report = {
+        "window": {"title": win[2], "rect": list(win[1]), "origin": origin} if win else {"screen": [img.shape[1], img.shape[0]]},
+        "state": state,
+        "teal_blocks": len(boxes),
+        "list_buttons": len(btns),
+        "wide_buttons": [asdict(b) for b in wides],
+        "items": items,
+        "files": {"raw": f"{stem}.png", "annotated": f"{stem}-annotated.png"},
+    }
+    Path(f"{stem}.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return report
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["scan"])
+    ap.add_argument("--ocr", action="store_true")
+    ap.add_argument("--tag", default="scan")
+    ap.add_argument("--screen", action="store_true", help="不找窗口，直接抓主屏")
+    args = ap.parse_args()
+
+    winenv.enable_dpi_awareness()
+    r = scan(ocr=args.ocr, tag=args.tag, use_window=not args.screen)
+    if "error" in r:
+        print(r["error"])
+        return 2
+    print(f"window: {r['window']}")
+    print(f"state={r['state']}  teal={r['teal_blocks']}  list_btn={r['list_buttons']}  wide_btn={len(r['wide_buttons'])}")
+    for it in r["items"]:
+        c, b = it["card"], it["greet_button"]
+        print(f"  #{it['index']:<2} card=({c['x']},{c['y']},{c['w']}x{c['h']}) btn=({b['x']},{b['y']}) {it['name_guess']}")
+    print(f"标注图: {r['files']['annotated']}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,489 @@
+"""在简历弹窗内部滚动，把整份简历（尤其教育经历）读完。
+
+三个要点
+--------
+1. **滚在弹窗里**，不是滚整个页面：滚轮指针必须落在弹窗正文区域上。
+2. **逐屏读 + 去重拼接**：每滚一次识别一屏，只把没见过的行追加进去。
+3. **滚动本身也要过输入闸门**：`winenv.scroll()` 会先确认光标到位，不到位直接抛
+   `InputBlocked`，不会在别处乱滚。
+"""
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Callable
+
+import numpy as np
+
+import vision
+import winenv
+
+# 弹窗正文相对「打招呼」大按钮的偏移（实测：按钮 x=1609 时正文区 800..1574）
+PANEL_LEFT_OFFSET = 809      # 按钮左缘 - 809 = 正文左边界
+PANEL_RIGHT_OFFSET = 35      # 正文右边界 = 按钮左缘 - 35
+PANEL_TOP_RATIO = 0.04       # 相对窗口高度，正文上边界
+PANEL_BOTTOM_RATIO = 0.94    # 相对窗口高度，正文下边界
+
+SECTION_HEADS = ("工作经历", "教育经历", "项目经历", "自我评价", "求职意向")
+
+# 姓名行常见形态：`颜阔森刚刚活跃` / `小悦 在线` / `张敏敏 刚刚活跃`
+STATUS_WORDS = ("刚刚活跃", "在线", "今日活跃", "本周活跃", "月内活跃", "刚刚看过", "今日看过",
+                "本周看过", "离职-随时到岗", "在职-月内到岗", "在职-暂不考虑", "随时到岗",
+                "离职", "在职", "已实名认证")
+NAME_JUNK = ("招聘规", "推荐牛人", "我的客服", "面试", "招聘数据", "账号权益",
+             "换一批", "查看更多", "查看全部", "继续沟通", "牛人分析器")
+NAME_RE = re.compile(r"^[\u4e00-\u9fa5]{2,4}$")
+
+
+def guess_name_from_text(text: str) -> str:
+    """从简历弹窗的纯文本前几行里认姓名（比按坐标更稳，因为能看上下文）。
+
+    规律：姓名下面一两行必然出现「刚刚活跃/在线/…」或「27岁丨大专…」。
+    所以：候选行去掉状态词后剩 2~6 个汉字，且往后两行里出现状态词或年龄 → 判为姓名。
+    """
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()][:6]
+    for i, line in enumerate(lines):
+        compact = line.replace(" ", "")
+        if any(j in compact for j in NAME_JUNK):
+            continue
+        cleaned = compact
+        for word in STATUS_WORDS:
+            cleaned = cleaned.replace(word, "")
+        cleaned = cleaned.strip(" 丨|·-、")
+        if not re.fullmatch(r"[\u4e00-\u9fa5]{2,6}", cleaned):
+            continue
+        nxt = "".join(lines[i + 1:i + 3])
+        status_next = any(w in nxt for w in ("活跃", "在线", "到岗", "离职", "在职"))
+        age_next = "岁" in nxt
+        if status_next or age_next:
+            return cleaned
+    return ""
+
+
+def guess_name(lines: list[dict]) -> str:
+    """从简历弹窗顶部的 OCR 行里猜出候选人姓名。
+
+    优先找带「在线 / 刚刚活跃」等状态词的那一行（去掉状态词后剩 2~4 个汉字）；
+    否则找独立短行，且下一行是「26岁丨大专…」这种年龄行。
+    """
+    top = sorted(lines, key=lambda d: d["box"][1])[:10]
+    for it in top:
+        t = it["text"].strip()
+        if any(j in t for j in NAME_JUNK) or not any(s in t for s in STATUS_WORDS):
+            continue
+        for s in STATUS_WORDS:
+            t = t.replace(s, "")
+        t = t.strip(" 丨|·-")
+        if NAME_RE.match(t):
+            return t
+    for i, it in enumerate(top):
+        t = it["text"].strip()
+        if not NAME_RE.match(t) or any(j in t for j in NAME_JUNK):
+            continue
+        if any(s in t for s in STATUS_WORDS):      # 「今日活跃」这种状态行不是姓名
+            continue
+        # 姓名下一两行通常是状态词 + 「21岁丨大专…」，所以往后看两行再判定
+        nxt = " ".join(x["text"] for x in top[i + 1:i + 3])
+        if "岁" in nxt or "年" in nxt:
+            return t
+    return ""
+
+
+@dataclass
+class ReadResult:
+    lines: list[dict] = field(default_factory=list)
+    text: str = ""
+    sections: dict[str, str] = field(default_factory=dict)
+    steps: int = 0
+    reached_education: bool = False
+    stopped_reason: str = ""
+    name: str = ""
+    work: list = field(default_factory=list)        # [{company,title,period,...}]
+    education: list = field(default_factory=list)   # [{school,major,degree,period}]
+    sidebar: list = field(default_factory=list)     # 侧栏「经历概览」解析结果
+    incomplete: bool = False                        # 没读到教育经历/被截断 -> 需复核
+    review_reason: str = ""
+
+    def as_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "lines": self.lines,
+            "text": self.text,
+            "sections": self.sections,
+            "steps": self.steps,
+            "reached_education": self.reached_education,
+            "stopped_reason": self.stopped_reason,
+            "work": self.work,
+            "education": self.education,
+            "sidebar": self.sidebar,
+            "incomplete": self.incomplete,
+            "review_reason": self.review_reason,
+        }
+
+
+def panel_band(img: np.ndarray, wide: vision.Rect) -> vision.Rect:
+    """弹窗正文的识别区域：以侧栏大按钮为锚点，再按白色像素收窄上下边界。"""
+    h, w = img.shape[:2]
+    x0 = max(0, wide.x - PANEL_LEFT_OFFSET)
+    x1 = min(w, max(x0 + 200, wide.x - PANEL_RIGHT_OFFSET))
+    y0 = int(h * PANEL_TOP_RATIO)
+    y1 = int(h * PANEL_BOTTOM_RATIO)
+
+    # 在正文列中间取一窄条，按"接近白色"找真正的内容上下沿
+    strip = img[y0:y1, (x0 + x1) // 2 - 40 : (x0 + x1) // 2 + 40].mean(axis=2)
+    white_rows = (strip > 246).mean(axis=1) > 0.8
+    idx = np.flatnonzero(white_rows)
+    if idx.size > (y1 - y0) * 0.3:
+        y0 = max(0, y0 + int(idx[0]) - 36)      # 往上留一点，别把第一条经历的表头裁掉
+        y1 = y0 + int(idx[-1]) - int(idx[0]) + 1
+    return vision.Rect(x0, y0, x1 - x0, max(120, y1 - y0))
+
+
+def _is_near_dup(text: str, recent: list[str], threshold: float = 0.86) -> bool:
+    """和最近几行"几乎一样"的行，视为相邻帧重复采集（OCR 会有个别字差异）。"""
+    import difflib
+
+    t = text.strip()
+    if not t:
+        return True
+    for old in recent:
+        if abs(len(old) - len(t)) > 4:
+            continue
+        if difflib.SequenceMatcher(None, old, t).ratio() >= threshold:
+            return True
+    return False
+
+
+def _has_education_content(lines: list[dict], min_after: int = 1) -> bool:
+    """「教育经历」标题出现，且后面至少还有一条内容（学校/时间那一行）。"""
+    for i, ln in enumerate(lines):
+        if "教育经历" in ln["text"]:
+            return len(lines) - i - 1 >= min_after
+    return False
+
+
+def read_resume(
+    rect: tuple[int, int, int, int],
+    wide: vision.Rect,
+    *,
+    max_steps: int = 12,
+    scroll_clicks: int = -3,
+    settle: float = 0.9,
+    log: Callable[[str], None] = print,
+) -> ReadResult:
+    """滚动并识别整份简历。
+
+    调用前弹窗必须已经打开（sidebar 的「打招呼」大按钮可见）。
+    """
+    ox, oy = rect[0], rect[1]
+    engine = vision.load_ocr()
+    if engine is None:
+        raise RuntimeError("OCR 未安装，无法逐屏读取")
+
+    res = ReadResult()
+    seen: set[str] = set()
+    recent: list[str] = []          # 最近若干行，用于模糊去重（相邻帧重叠内容）
+    band = None
+
+    # 先把弹窗正文拉回顶部：否则第一条经历的表头可能正好被裁在可视区上方
+    try:
+        first_img = winenv.grab_window(rect)
+        probe = panel_band(first_img, wide)
+        winenv.scroll(ox + probe.x + probe.w // 2, oy + probe.y + probe.h // 2, 5)
+        time.sleep(settle)
+        log("  已把弹窗滚到顶部再开始读")
+    except Exception as exc:
+        log(f"  [warn] 回滚到顶部失败（继续读）：{exc}")
+
+    for step in range(max_steps):
+        img = winenv.grab_window(rect)
+        if band is None:
+            band = panel_band(img, wide)
+            log(f"  正文识别区: ({band.x},{band.y}) {band.w}x{band.h}")
+
+        items = vision.ocr_crop(engine, img, band)
+        if step == 0:
+            res.name = guess_name(items)      # 先按坐标猜；下面读完再用全文校正一次
+        new_lines = 0
+        for it in items:
+            key = it["text"].strip()
+            if not key or key in seen:
+                continue
+            if _is_near_dup(key, recent):     # 同一行被两帧重复识别（差一两个字）
+                continue
+            seen.add(key)
+            recent.append(key)
+            if len(recent) > 80:
+                recent.pop(0)
+            res.lines.append({**it, "step": step})
+            new_lines += 1
+        log(f"  第 {step + 1} 屏：{len(items)} 行，新增 {new_lines} 行")
+
+        res.text = "\n".join(ln["text"] for ln in res.lines)
+
+        # 每屏都做一次结构化提取，再按 (公司,时间) / (学校,时间) 合并去重，
+        # 这样即使某一屏正好把一条经历切成两半，也能靠另一屏补齐。
+        try:
+            import extract as extract_mod
+
+            # 这里的 items 已经按正文区裁剪过，不再需要 panel_filter
+            frame = extract_mod.extract(items, None)
+            for w in frame.work:
+                key = (w.company, w.period)
+                if key not in {(x["company"], x["period"]) for x in res.work}:
+                    res.work.append({"company": w.company, "title": w.title, "employment": w.employment,
+                                     "period": w.period, "descriptions": w.descriptions, "tags": w.tags})
+            for e in frame.education:
+                key = (e.school, e.period)
+                if key not in {(x["school"], x["period"]) for x in res.education}:
+                    res.education.append({"school": e.school, "major": e.major, "degree": e.degree,
+                                          "period": e.period})
+        except Exception as exc:  # 提取失败不该影响正文读取
+            log(f"  [warn] 结构化提取失败：{exc}")
+
+        if _has_education_content(res.lines):
+            res.reached_education = True
+            res.stopped_reason = "已读到教育经历"
+            break
+        if step > 0 and new_lines == 0:
+            res.stopped_reason = "滚动后没有新内容"
+            break
+        if step == max_steps - 1:
+            res.stopped_reason = f"达到最大滚动次数 {max_steps}"
+            break
+
+        # 在正文区域内滚动（指针落在下半部分，避免压到按钮）
+        tx = ox + band.x + band.w // 2
+        ty = oy + band.y + int(band.h * 0.75)
+        winenv.scroll(tx, ty, scroll_clicks)
+        time.sleep(settle)
+        res.steps = step + 1
+
+    res.steps = max(res.steps, 1)
+    res.sections = slice_sections(res.text)
+    # 用整段文本再算一次姓名（能看上下文，比单看坐标稳），算出来就覆盖
+    better = guess_name_from_text(res.text)
+    if better:
+        res.name = better
+
+    # 侧栏「经历概览」交叉校验：补公司名/职位，补主区域漏掉的条目
+    try:
+        sidebar = read_sidebar(engine, winenv.grab_window(rect), wide, log=log)
+    except Exception as exc:
+        sidebar = []
+        log(f"  [warn] 侧栏读取失败：{exc}")
+    res.sidebar = sidebar
+    merged = {"added_work": 0, "added_edu": 0, "filled": 0, "truncated": 0, "notes": []}
+    if sidebar:
+        merged = merge_sidebar(res.work, res.education, sidebar)
+        log(f"  侧栏合并：补 {merged['filled']} 项，新增 {merged['added_work']} 段，"
+            f"截断 {merged['truncated']} 条")
+
+    # 完整性判定：`已读到教育经历` 只是页面进度信号，没读到就说明这份简历没读全
+    if not res.reached_education:
+        res.incomplete = True
+        if "教育经历" not in (res.sections or {}):
+            res.review_reason = f"教育经历未读到（{res.stopped_reason or '未知原因'}）"
+        else:
+            res.review_reason = "教育经历分节为空"
+    if not res.work:
+        res.review_reason = (res.review_reason + "；" if res.review_reason else "") + "工作经历 0 条"
+    else:
+        missing = sum(1 for w in res.work
+                      if (w.get("company") or "").strip() and not (w.get("title") or "").strip())
+        missing_company = sum(1 for w in res.work if not (w.get("company") or "").strip())
+        extra = []
+        if missing:
+            extra.append(f"{missing} 段经历缺职位")
+        if missing_company:
+            extra.append(f"{missing_company} 段经历缺公司名")
+        if merged["added_work"]:
+            extra.append(f"{merged['added_work']} 段由侧栏补入")
+        if merged["truncated"]:
+            extra.append(f"{merged['truncated']} 段侧栏公司名截断")
+        if extra:
+            res.review_reason = "；".join(
+                ([res.review_reason] if res.review_reason else []) + extra)
+    if res.review_reason:
+        res.incomplete = True
+    return res
+
+
+SIDEBAR_X_RATIO = 0.625      # 侧栏「经历概览」大致从窗口宽度的这个比例开始
+SIDEBAR_MIN_W = 300
+
+
+def sidebar_band(img: np.ndarray, wide: vision.Rect) -> vision.Rect:
+    """右侧「经历概览」区域：主面板右边到窗口右缘。"""
+    h, w = img.shape[:2]
+    x0 = min(w - SIDEBAR_MIN_W, max(wide.x - PANEL_RIGHT_OFFSET + 20,
+                                    int(w * SIDEBAR_X_RATIO)))
+    return vision.Rect(x0, 0, w - x0, h)
+
+
+def _rows_by_y(items: list[dict], tol: int = 8) -> list[list[dict]]:
+    """把 OCR 结果按纵坐标聚成行。"""
+    rows: list[list[dict]] = []
+    for it in sorted(items, key=lambda i: (i["box"][1], i["box"][0])):
+        placed = False
+        for row in rows:
+            if abs(row[0]["box"][1] - it["box"][1]) <= tol:
+                row.append(it)
+                placed = True
+                break
+        if not placed:
+            rows.append([it])
+    for row in rows:
+        row.sort(key=lambda i: i["box"][0])
+    return rows
+
+
+def parse_sidebar_items(items: list[dict]) -> list[dict]:
+    """解析侧栏「经历概览」：公司 + 时间段一行，职位 + 时长下一行。
+
+    返回 [{company, title, period, truncated}]，按出现顺序。
+    """
+    import re as _re
+
+    rows = _rows_by_y(items)
+    start = None
+    for i, row in enumerate(rows):
+        if any("经历概览" in it["text"] for it in row):
+            start = i + 1
+            break
+    if start is None:
+        return []
+
+    out: list[dict] = []
+    pending: dict | None = None
+    for row in rows[start:]:
+        texts = [it["text"] for it in row]
+        joined = " ".join(texts)
+        period = next((t for t in texts if _re.search(r"\d{4}", t)), "")
+        left = next((t for t in texts if t != period and len(t.strip()) >= 2), "")
+        if not left:
+            continue
+        left_clean = left.strip()
+        if period and _re.search(r"\d{4}", period):
+            if pending:
+                out.append(pending)
+            pending = {"company": left_clean, "title": "", "period": period.strip(),
+                       "truncated": ".." in left_clean or "…" in left_clean}
+        elif pending and not pending["title"]:
+            pending["title"] = left_clean
+    if pending:
+        out.append(pending)
+    return out
+
+
+def read_sidebar(engine, img: np.ndarray, wide: vision.Rect, log=print) -> list[dict]:
+    """读右侧「经历概览」（先定位标题，再只 OCR 那一块）。"""
+    band = sidebar_band(img, wide)
+    probe = vision.Rect(band.x, band.y, min(160, band.w), band.h)
+    head_items = vision.ocr_crop(engine, img, probe)
+    y_top = 0
+    for it in head_items:
+        if "经历概览" in it["text"]:
+            y_top = max(0, it["box"][1] - 12)
+            break
+    region = vision.Rect(band.x, y_top, band.w, min(band.h - y_top, 760))
+    items = vision.ocr_crop(engine, img, region)
+    entries = parse_sidebar_items(items)
+    if entries:
+        log(f"  侧栏经历概览：{len(entries)} 段")
+    return entries
+
+
+EDU_HINT = ("学院", "大学", "学校", "中学", "职校", "技校")
+TRUNC_CHARS = ("..", "…", "．.", "．")
+
+
+def _norm_period(period: str) -> str:
+    import re as _re
+    return _re.sub(r"[\s　]", "", period or "")
+
+
+def _looks_edu(entry: dict) -> bool:
+    name = entry.get("company", "")
+    if any(w in name for w in EDU_HINT):
+        return True
+    period = _norm_period(entry.get("period", ""))
+    return bool(period) and period.count(".") == 0      # 「2021-2024」只有年份
+
+
+def _is_truncated(name: str) -> bool:
+    """侧栏公司名被省略号裁掉了（"泉州市展卷文化传播有..." / "晋江安雅卫生用品有限."）。"""
+    t = (name or "").strip()
+    if not t:
+        return False
+    return t.endswith((".", "．", "…", "。。")) or ".." in t or "…" in t
+
+
+def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) -> dict:
+    """把侧栏「经历概览」并进主区域结果：补公司名/职位，补漏掉的条目。
+
+    侧栏公司名常被截断（带 .. 或 ．），截断的不写进结果，只用来校验数量。
+    返回 {"added_work": n, "added_edu": n, "filled": n, "truncated": n, "notes": [...]}
+    """
+    filled = added_work = added_edu = truncated = 0
+    notes: list[str] = []
+
+    for ent in sidebar:
+        name = (ent.get("company") or "").strip()
+        period = _norm_period(ent.get("period", ""))
+        title = (ent.get("title") or "").strip()
+        is_edu = _looks_edu(ent)
+        target = education if is_edu else work
+
+        match = next((x for x in target if _norm_period(x.get("period", "")) == period), None)
+        if match is not None:
+            if not (match.get("company") or match.get("school")):
+                if ent.get("truncated") or _is_truncated(name):
+                    truncated += 1
+                    notes.append(f"{period} 侧栏公司名被截断（{name}）")
+                else:
+                    match["company" if not is_edu else "school"] = name
+                    filled += 1
+            if not is_edu and not match.get("title") and title:
+                match["title"] = title
+                filled += 1
+            continue
+
+        # 主区域没有这一段：侧栏补进来
+        if ent.get("truncated") or _is_truncated(name):
+            truncated += 1
+            notes.append(f"{period} 主区域缺这段，侧栏公司名被截断（{name}）")
+            continue
+        if is_edu:
+            education.append({"school": name, "major": "", "degree": "",
+                              "period": ent.get("period", ""), "source": "sidebar"})
+            added_edu += 1
+        else:
+            work.append({"company": name, "title": title, "employment": "",
+                         "period": ent.get("period", ""), "descriptions": [], "tags": [],
+                         "source": "sidebar"})
+            added_work += 1
+        notes.append(f"{period} 由侧栏补入")
+
+    return {"added_work": added_work, "added_edu": added_edu, "filled": filled,
+            "truncated": truncated, "notes": notes}
+
+
+def slice_sections(text: str) -> dict[str, str]:
+    """按小节标题把全文切段。"""
+    starts = SECTION_HEADS
+    out: dict[str, str] = {}
+    for i, head in enumerate(starts):
+        pos = text.find(head)
+        if pos < 0:
+            continue
+        end = len(text)
+        for other in SECTION_HEADS:
+            if other == head:
+                continue
+            p2 = text.find(other, pos + len(head))
+            if 0 <= p2 < end:
+                end = p2
+        out[head] = text[pos:end].strip()
+    return out

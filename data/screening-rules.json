@@ -1,0 +1,14 @@
+{
+  "edu": {
+    "min_level": "大专",
+    "require_listed_school": true,
+    "adult_school": "flag"
+  },
+  "work": {
+    "min_entries": 1
+  },
+  "model": {
+    "threshold_pass": null,
+    "threshold_reject": null
+  }
+}

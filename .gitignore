@@ -1,0 +1,30 @@
+# ---- 依赖与缓存 ----
+.venv/
+__pycache__/
+*.py[cod]
+pip-*/
+*.egg-info/
+
+# ---- 采集结果：含真实候选人个人信息，绝不入库 ----
+boss_vision/runs/
+boss_vision/_test_runs/
+boss_vision/_e2e/
+boss_vision/_daily_test/
+boss_vision/_seq_test/
+boss_vision/_auto_csv_test/
+*-resume-*.txt
+*-summary.csv
+*-results.json
+runs/
+
+# ---- 对话导出（含聊天内容与候选人信息）----
+对话记录*.md
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+
+# ---- 日志 ----
+*.log

@@ -1,0 +1,75 @@
+"""OCR 冒烟测试：验证 rapidocr 装上没有、认得准不准。
+
+    python ocr_check.py                      # 抓当前 BOSS 窗口整屏识别
+    python ocr_check.py --image runs\\x.png    # 对已有截图识别
+    python ocr_check.py --region 800,256,774,636   # 只识别简历正文那块 (x,y,w,h)
+
+输出：控制台打印带置信度的文本行；runs\\ocr-*.png 是画了文字框的标注图。
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+_HERE = Path(__file__).parent
+sys.path.insert(0, str(_HERE))
+import vision
+import winenv
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--image", default=None, help="图片路径；不给就抓当前 BOSS 窗口")
+    ap.add_argument("--region", default=None, help="x,y,w,h，只识别该区域")
+    ap.add_argument("--min-score", type=float, default=0.5)
+    a = ap.parse_args()
+
+    winenv.enable_dpi_awareness()
+    engine = vision.load_ocr()
+    if engine is None:
+        print("\nOCR 没装上。装一种即可：")
+        print("  pip install rapidocr onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple")
+        print("  pip install rapidocr-onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple   (老版 1.x)")
+        return 2
+    print(f"引擎: {engine.kind}")
+
+    if a.image:
+        img = np.asarray(Image.open(a.image).convert("RGB"))[:, :, ::-1].copy()
+        src = a.image
+    else:
+        found = winenv.find_window("BOSS直聘")
+        if not found:
+            print("没找到 BOSS 窗口，也没有 --image")
+            return 2
+        img = winenv.grab_window(found[1])
+        src = "BOSS 窗口"
+
+    region = None
+    if a.region:
+        x, y, w, h = (int(v) for v in a.region.split(","))
+        region = vision.Rect(x, y, w, h)
+
+    items = vision.ocr_crop(engine, img, region)
+    kept = [it for it in items if it["score"] >= a.min_score]
+    print(f"来源 {src}；识别到 {len(items)} 行，其中 ≥{a.min_score} 的 {len(kept)} 行\n")
+    for it in kept[:60]:
+        x0, y0, x1, y1 = it["box"]
+        print(f"  [{it['score']:.2f}] ({x0:>4},{y0:>4}) {it['text']}")
+
+    ann = Image.fromarray(img[:, :, ::-1])
+    d = ImageDraw.Draw(ann)
+    for it in kept:
+        d.rectangle(it["box"], outline=(255, 0, 0), width=2)
+    vision.OUT.mkdir(exist_ok=True)
+    out = vision.OUT / "ocr-check.png"
+    ann.save(out)
+    print(f"\n标注图: {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
