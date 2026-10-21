@@ -278,7 +278,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
         max_refresh: int = 3, min_gap: float = 15.0, max_gap: float = 25.0,
         icon_check: bool = True, count_valid: bool = False,
         max_attempts: int | None = None, allow_refresh: bool = False,
-        block_text_scan: bool = False) -> int:
+        block_text_scan: bool = False, reader: str = "auto") -> int:
     winenv.enable_dpi_awareness()
     found = winenv.find_window("BOSS直聘")
     if not found:
@@ -559,9 +559,21 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 import resume_reader
 
                 try:
-                    rr = resume_reader.read_resume(rect, p2["wides"][0], log=print)
+                    mode = reader
+                    if mode == "auto":
+                        try:
+                            import vlm
+                            mode = "vlm" if vlm.available() else "ocr"
+                        except Exception:
+                            mode = "ocr"
+                    if mode == "vlm":
+                        rr = resume_reader.read_resume_vlm(rect, p2["wides"][0], log=print)
+                    else:
+                        rr = resume_reader.read_resume(rect, p2["wides"][0], log=print)
                     record.update({
                         "name": rr.name,
+                        "reader": getattr(rr, "reader", "ocr"),
+                        "usage": getattr(rr, "usage", {}),
                         "text_len": len(rr.text),
                         "sections": rr.sections,
                         "steps": rr.steps,
@@ -647,6 +659,8 @@ def main() -> int:
                     help="整屏卡片全跳过时，最多刷新页面几次换新候选人")
     ap.add_argument("--block-text-scan", dest="block_text_scan", action="store_true",
                     help="用 OCR 文字找内嵌推荐块（不依赖配色，较慢 1.5~3s/帧）")
+    ap.add_argument("--reader", choices=("auto", "ocr", "vlm"), default="auto",
+                    help="简历识别方式：auto=有 VLM key 就用大模型，否则 OCR")
     ap.add_argument("--allow-refresh", dest="allow_refresh", action="store_true",
                     help="整屏都跳过/滚动用尽时允许刷新页面（默认只往下滚，不刷新）")
     ap.add_argument("--no-icon-check", dest="icon_check", action="store_false",
@@ -683,7 +697,7 @@ def main() -> int:
     try:
         return run(a.live, a.limit, a.max_scrolls, a.read, anchor, a.max_refresh,
                    a.min_gap, a.max_gap, a.icon_check, allow_refresh=a.allow_refresh,
-                   block_text_scan=a.block_text_scan)
+                   block_text_scan=a.block_text_scan, reader=a.reader)
     except KeyboardInterrupt:
         print("\n[已中断] 收到 Ctrl+C：已处理的候选人和结果都已保存，可以安全关闭。")
         return 130

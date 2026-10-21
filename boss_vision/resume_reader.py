@@ -111,6 +111,8 @@ class ReadResult:
     conflicts: list = field(default_factory=list)     # 跨屏冲突（时间段/字段矛盾）
     shots: list = field(default_factory=list)         # [(屏号, numpy 裁切图)]，仅内存
     review_reason: str = ""
+    reader: str = "ocr"                             # ocr / vlm
+    usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
 
     def as_dict(self) -> dict:
         return {
@@ -550,6 +552,133 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
 
     return {"added_work": added_work, "added_edu": added_edu, "filled": filled,
             "truncated": truncated, "notes": notes, "conflicts": conflict_sink}
+
+
+def read_resume_vlm(rect, wide, log=print, max_steps: int = 12,
+                    settle: float = 0.9, scroll_clicks: int = -3,
+                    cfg: dict | None = None) -> ReadResult:
+    """用多模态大模型逐屏读简历（替代 OCR）。
+
+    流程与 OCR 版一致：回顶 -> 逐屏截图 -> 送模型 -> 跨屏合并 -> 读到教育就停。
+    区别是没有 OCR 文本，结构化结果直接来自模型对版式的理解。
+    """
+    import numpy as _np
+
+    import vlm
+
+    res = ReadResult()
+    cfg = cfg or vlm.load_config()
+    if not (cfg.get("api_key") or vlm.api_key(cfg)):
+        raise RuntimeError("没有配置视觉模型 API key（环境变量 VLM_API_KEY）")
+
+    ox, oy = rect[0], rect[1]
+    band = panel_band(winenv.grab_window(rect), wide)
+    log(f"  正文识别区: ({band.x},{band.y}) {band.w}x{band.h}")
+
+    # 回顶（与 OCR 版同样的验证式回滚）
+    try:
+        img = winenv.grab_window(rect)
+        tx, ty = ox + band.x + band.w // 2, oy + band.y + band.h // 2
+        before = _np.asarray(img, dtype=_np.int16)
+        winenv.scroll(tx, ty, 5)
+        time.sleep(settle)
+        after = _np.asarray(winenv.grab_window(rect), dtype=_np.int16)
+        res.at_top = float(_np.abs(after - before).mean()) < 0.5
+        log("  已把弹窗滚到顶部再开始读")
+    except Exception as exc:
+        log(f"  [warn] 回滚到顶部失败（继续读）：{exc}")
+
+    work: list[dict] = []
+    education: list[dict] = []
+    projects: list[dict] = []
+    campus: list[dict] = []
+    usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "screens": 0}
+    prev_frame = None
+
+    for step in range(max_steps):
+        img = winenv.grab_window(rect)
+        crop = img[band.y: band.y + band.h, band.x: band.x + band.w]
+        res.shots.append((step, crop.copy()))
+
+        try:
+            raw = vlm.read_screen(crop, cfg, log=log)
+        except Exception as exc:
+            log(f"  [warn] 第 {step + 1} 屏读取失败：{exc}")
+            res.stopped_reason = f"视觉模型调用失败（第 {step + 1} 屏）"
+            break
+
+        parts = vlm.normalize(raw["sections"])
+        if step == 0:
+            res.name = _name_from_vlm(raw["sections"]) or res.name
+        vlm.merge_screens(work, parts["work"])
+        vlm.merge_screens(projects, parts["projects"])
+        vlm.merge_screens(campus, parts["campus"])
+        for e in parts["education"]:
+            if not any(_norm_period(e.get("period", "")) == _norm_period(old.get("period", ""))
+                       and (e.get("school") or "") == (old.get("school") or "")
+                       for old in education):
+                education.append(e)
+        res.screen_count = step + 1
+        u = raw.get("usage") or {}
+        usage_total["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
+        usage_total["completion_tokens"] += int(u.get("completion_tokens") or 0)
+        usage_total["screens"] += 1
+        log(f"  第 {step + 1} 屏：工作 {len(parts['work'])} 条 / 教育 {len(parts['education'])} 条")
+
+        frame = img.tobytes()
+        moved = prev_frame is not None and frame != prev_frame
+        prev_frame = frame
+
+        if education:
+            res.reached_education = True
+            res.complete = True
+            res.stopped_reason = "读取完成（已读到教育经历）"
+            break
+        if step > 0 and not moved:
+            res.stopped_reason = "页面未移动（判断为到底，未读到教育经历）"
+            break
+        if step == max_steps - 1:
+            res.stopped_reason = f"达到滚动上限 {max_steps} 屏（未读到教育经历）"
+            break
+
+        tx = ox + band.x + band.w // 2
+        ty = oy + band.y + int(band.h * 0.75)
+        winenv.scroll(tx, ty, scroll_clicks)
+        time.sleep(settle)
+        res.steps = step + 1
+
+    res.work = work
+    res.education = education
+    if projects:
+        res.conflicts.extend([])
+    res.usage = usage_total
+    res.reader = "vlm"
+    res.section_seen = (["work"] if work else []) + (["edu"] if education else [])
+
+    # 复核判定（与 OCR 版一致）
+    if not education:
+        res.incomplete = True
+        res.review_reason = f"教育经历未读到（{res.stopped_reason or '未知原因'}）"
+    if not work:
+        res.review_reason = (res.review_reason + "；" if res.review_reason else "") + "工作经历 0 条"
+    else:
+        miss_title = sum(1 for w in work if (w.get("company") or "").strip() and not (w.get("title") or "").strip())
+        miss_company = sum(1 for w in work if not (w.get("company") or "").strip())
+        extra = []
+        if miss_title:
+            extra.append(f"{miss_title} 段经历缺职位")
+        if miss_company:
+            extra.append(f"{miss_company} 段经历缺公司名")
+        if extra:
+            res.review_reason = "；".join(([res.review_reason] if res.review_reason else []) + extra)
+    if res.review_reason:
+        res.incomplete = True
+    return res
+
+
+def _name_from_vlm(sections: list[dict]) -> str:
+    """姓名不在结构化输出里，留给 guess_name；这里返回空串即可（后续可扩展）。"""
+    return ""
 
 
 def slice_sections(text: str) -> dict[str, str]:
