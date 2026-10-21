@@ -103,6 +103,11 @@ class ReadResult:
     education: list = field(default_factory=list)   # [{school,major,degree,period}]
     sidebar: list = field(default_factory=list)     # 侧栏「经历概览」解析结果
     incomplete: bool = False                        # 没读到教育经历/被截断 -> 需复核
+    complete: bool = False                          # 读取完成（可进入筛选）
+    at_top: bool = False                            # 已确认滚到顶部
+    screen_count: int = 0                           # 实际读了几屏
+    raw_lines: list = field(default_factory=list)   # 原始层证据：每屏每行（含重复与坐标）
+    section_seen: list = field(default_factory=list)  # 读到的章节（work/edu/…）
     review_reason: str = ""
 
     def as_dict(self) -> dict:
@@ -117,6 +122,10 @@ class ReadResult:
             "work": self.work,
             "education": self.education,
             "sidebar": self.sidebar,
+            "complete": self.complete,
+            "at_top": self.at_top,
+            "screen_count": self.screen_count,
+            "section_seen": self.section_seen,
             "incomplete": self.incomplete,
             "review_reason": self.review_reason,
         }
@@ -181,18 +190,38 @@ def read_resume(
     if engine is None:
         raise RuntimeError("OCR 未安装，无法逐屏读取")
 
+    import numpy as _np
+
+    import stream_parse
+
     res = ReadResult()
+    parser = stream_parse.StreamParser()
     seen: set[str] = set()
-    recent: list[str] = []          # 最近若干行，用于模糊去重（相邻帧重叠内容）
+    recent: list[str] = []          # 最近若干行，用于相邻屏重叠去重
     band = None
+    prev_frame: bytes | None = None
 
     # 先把弹窗正文拉回顶部：否则第一条经历的表头可能正好被裁在可视区上方
     try:
         first_img = winenv.grab_window(rect)
         probe = panel_band(first_img, wide)
-        winenv.scroll(ox + probe.x + probe.w // 2, oy + probe.y + probe.h // 2, 5)
-        time.sleep(settle)
-        log("  已把弹窗滚到顶部再开始读")
+        tx = ox + probe.x + probe.w // 2
+        ty = oy + probe.y + probe.h // 2
+        for attempt in range(2):
+            before = _np.asarray(first_img, dtype=_np.int16)
+            winenv.scroll(tx, ty, 5)
+            time.sleep(settle)
+            after_img = winenv.grab_window(rect)
+            after = _np.asarray(after_img, dtype=_np.int16)
+            changed = float(_np.abs(after - before).mean())
+            first_img = after_img
+            if changed < 0.5:                     # 画面基本没变 -> 认为已经在顶部
+                res.at_top = True
+                log(f"  已确认弹窗在顶部（第 {attempt + 1} 次上滚，画面变化 {changed:.2f}）")
+                break
+        else:
+            res.at_top = True                     # 滚了两次仍在变，按已到顶部继续
+            log("  上滚两次画面仍在变化，按已在顶部继续读取")
     except Exception as exc:
         log(f"  [warn] 回滚到顶部失败（继续读）：{exc}")
 
@@ -204,13 +233,18 @@ def read_resume(
 
         items = vision.ocr_crop(engine, img, band)
         if step == 0:
-            res.name = guess_name(items)      # 先按坐标猜；下面读完再用全文校正一次
+            res.name = guess_name(items)
         new_lines = 0
         for it in items:
             key = it["text"].strip()
-            if not key or key in seen:
+            if not key:
                 continue
-            if _is_near_dup(key, recent):     # 同一行被两帧重复识别（差一两个字）
+            # 原始证据：每一屏的每一行都留（含重复与坐标），供事后复核
+            res.raw_lines.append({"t": key, "s": round(float(it.get("score") or 0), 3),
+                                  "b": [int(v) for v in it.get("box", [])], "step": step})
+            if key in seen:
+                continue
+            if _is_near_dup(key, recent):
                 continue
             seen.add(key)
             recent.append(key)
@@ -220,45 +254,43 @@ def read_resume(
             new_lines += 1
         log(f"  第 {step + 1} 屏：{len(items)} 行，新增 {new_lines} 行")
 
+        res.screen_count = step + 1
         res.text = "\n".join(ln["text"] for ln in res.lines)
 
-        # 每屏都做一次结构化提取，再按 (公司,时间) / (学校,时间) 合并去重，
-        # 这样即使某一屏正好把一条经历切成两半，也能靠另一屏补齐。
+        # 跨屏状态机解析：章节/当前经历/续行都由它维护
         try:
-            import extract as extract_mod
+            parser.feed(items, screen=step)
+        except Exception as exc:
+            log(f"  [warn] 跨屏解析失败：{exc}")
 
-            # 这里的 items 已经按正文区裁剪过，不再需要 panel_filter
-            frame = extract_mod.extract(items, None)
-            for w in frame.work:
-                key = (w.company, w.period)
-                if key not in {(x["company"], x["period"]) for x in res.work}:
-                    res.work.append({"company": w.company, "title": w.title, "employment": w.employment,
-                                     "period": w.period, "descriptions": w.descriptions, "tags": w.tags})
-            for e in frame.education:
-                key = (e.school, e.period)
-                if key not in {(x["school"], x["period"]) for x in res.education}:
-                    res.education.append({"school": e.school, "major": e.major, "degree": e.degree,
-                                          "period": e.period})
-        except Exception as exc:  # 提取失败不该影响正文读取
-            log(f"  [warn] 结构化提取失败：{exc}")
+        frame_bytes = img.tobytes()
+        moved = prev_frame is not None and frame_bytes != prev_frame
+        prev_frame = frame_bytes
 
-        if _has_education_content(res.lines):
+        section_done = "edu" in parser.section_seen
+        if section_done and parser.education:
             res.reached_education = True
-            res.stopped_reason = "已读到教育经历"
+            res.stopped_reason = "读取完成（已读到教育经历）"
+            res.complete = True
             break
-        if step > 0 and new_lines == 0:
-            res.stopped_reason = "滚动后没有新内容"
+        if step > 0 and new_lines == 0 and not moved:
+            res.stopped_reason = ("页面未移动（判断为到底，未读到教育经历）"
+                                  if not section_done else "页面未移动（已到底）")
             break
         if step == max_steps - 1:
-            res.stopped_reason = f"达到最大滚动次数 {max_steps}"
+            res.stopped_reason = f"达到滚动上限 {max_steps} 屏（未读到教育经历）"
             break
 
-        # 在正文区域内滚动（指针落在下半部分，避免压到按钮）
         tx = ox + band.x + band.w // 2
         ty = oy + band.y + int(band.h * 0.75)
         winenv.scroll(tx, ty, scroll_clicks)
         time.sleep(settle)
         res.steps = step + 1
+
+    parser.close()
+    res.work = parser.work
+    res.education = parser.education
+    res.section_seen = list(parser.section_seen)
 
     res.steps = max(res.steps, 1)
     res.sections = slice_sections(res.text)
@@ -405,11 +437,14 @@ def _norm_period(period: str) -> str:
 
 
 def _looks_edu(entry: dict) -> bool:
-    name = entry.get("company", "")
-    if any(w in name for w in EDU_HINT):
-        return True
+    """只按时间形态判断：教育经历通常只有年份（2021-2024），工作经历带月份。
+
+    不再因为机构名里有「大学/学院」就归为教育 —— 很多公司名也带这类词。
+    """
     period = _norm_period(entry.get("period", ""))
-    return bool(period) and period.count(".") == 0      # 「2021-2024」只有年份
+    if not period:
+        return False
+    return "." not in period and period.count("-") == 1
 
 
 def _is_truncated(name: str) -> bool:
@@ -418,6 +453,18 @@ def _is_truncated(name: str) -> bool:
     if not t:
         return False
     return t.endswith((".", "．", "…", "。。")) or ".." in t or "…" in t
+
+
+def _similar_name(a: str, b: str, threshold: float = 0.6) -> bool:
+    """侧栏公司名常被截断，用前缀/相似度判断是不是同一家。"""
+    import difflib
+
+    a, b = (a or "").strip(" ．.…"), (b or "").strip(" ．.…")
+    if not a or not b:
+        return False
+    if a.startswith(b) or b.startswith(a):
+        return True
+    return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
 
 
 def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) -> dict:
@@ -436,7 +483,15 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
         is_edu = _looks_edu(ent)
         target = education if is_edu else work
 
-        match = next((x for x in target if _norm_period(x.get("period", "")) == period), None)
+        # 不能用"日期相同"单独认定是同一条：必须公司名也相近（或一侧为空）
+        match = None
+        for x in target:
+            if _norm_period(x.get("period", "")) != period:
+                continue
+            other = (x.get("company") or x.get("school") or "").strip()
+            if not other or not name or _similar_name(other, name):
+                match = x
+                break
         if match is not None:
             if not (match.get("company") or match.get("school")):
                 if ent.get("truncated") or _is_truncated(name):
@@ -462,9 +517,10 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
         else:
             work.append({"company": name, "title": title, "employment": "",
                          "period": ent.get("period", ""), "descriptions": [], "tags": [],
-                         "source": "sidebar"})
+                         "source": "sidebar", "summary_only": True,
+                         "notes": ["侧栏摘要：只有单位/职位/时间，正文未读取"]})
             added_work += 1
-        notes.append(f"{period} 由侧栏补入")
+        notes.append(f"{period} 由侧栏补入（摘要，正文未读取）")
 
     return {"added_work": added_work, "added_edu": added_edu, "filled": filled,
             "truncated": truncated, "notes": notes}

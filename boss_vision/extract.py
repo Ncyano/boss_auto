@@ -420,6 +420,11 @@ def _fix_education_with_list(edus: list) -> list:
         name = (getattr(e, "school", "") or "").strip()
         if not name:
             continue
+        if not getattr(e, "school_raw", ""):
+            try:
+                e.school_raw = name          # 保留 OCR 原文，校正只改 school
+            except Exception:
+                pass
         res = schools.lookup(name)
         if res["listed"]:
             e.school = res["matched"] or name

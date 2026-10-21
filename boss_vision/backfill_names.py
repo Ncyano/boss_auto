@@ -78,9 +78,33 @@ def fix_schools(rec: dict) -> bool:
 
     changed = False
     for e, obj in zip(edus, wrapped):
+        raw = getattr(obj, "school_raw", "")
+        if raw and e.get("school_raw") != raw:
+            e["school_raw"] = raw
+            changed = True
         if (e.get("school", ""), e.get("major", "")) != (obj.school, obj.major):
             e["school"], e["major"] = obj.school, obj.major
             changed = True
+    return changed
+
+
+SECTION_MAP = {"工作经历": "work", "教育经历": "edu", "项目经历": "project"}
+
+
+def fill_collect_state(rec: dict) -> bool:
+    """补采集状态字段（老记录没有）：章节、完成、屏数。"""
+    changed = False
+    secs = rec.get("sections") or {}
+    seen = [SECTION_MAP[k] for k in secs if k in SECTION_MAP]
+    if rec.get("section_seen") != seen:
+        rec["section_seen"] = seen
+        changed = True
+    if rec.get("complete") is None:
+        rec["complete"] = bool(rec.get("reached_education"))
+        changed = True
+    if not rec.get("screen_count"):
+        rec["screen_count"] = int(rec.get("steps") or 0) + 1
+        changed = True
     return changed
 
 
@@ -144,6 +168,8 @@ def main() -> int:
             if reparse_entries(rec):
                 changed = True
             if fix_schools(rec):
+                changed = True
+            if fill_collect_state(rec):
                 changed = True
             if mark_review(rec):
                 changed = True

@@ -48,6 +48,7 @@ DEFAULT_RULES = {
 PASS = "合适"
 REJECT = "不合格"
 REVIEW = "待复核"
+COLLECT_REVIEW = "采集待复核"      # 数据本身不可信，不能交给模型判断
 
 
 def load_rules(path: Path | None = None) -> dict:
@@ -78,6 +79,62 @@ def degree_level(text: str) -> int | None:
         if word in t:
             best = level if best is None else max(best, level)
     return best
+
+
+# 「需复核」里属于"业务事实"的原因（不是采集问题），其余都按采集质量问题处理
+BUSINESS_REASONS = ("工作经历 0 条",)
+
+
+def _has_section(sections: str, code: str, label: str) -> bool:
+    """「读到章节」列可能是英文代码（work/edu）也可能是中文小节名。"""
+    return code in sections or label in sections
+
+
+def screen_collection(row: dict, rules: dict) -> dict:
+    """采集质量闸门：数据不可信时不允许进入学历判断和模型判断。
+
+    区分两种"没有工作经历"：
+      · 工作经历章节读到了，但确实 0 条   -> 业务事实，可判不合格
+      · 工作经历章节没读到 / 读取未完成   -> 采集问题，进"采集待复核"
+    """
+    problems: list[str] = []
+
+    opened = str(row.get("已打开", "")).strip()
+    if opened and opened not in ("是", "True", "true", "1"):
+        problems.append("简历未成功打开")
+
+    sections = str(row.get("读到章节", "") or "")
+    completed = str(row.get("采集完成", "")).strip()
+
+    review_flag = str(row.get("需复核", "")).strip() == "是"
+    if review_flag:
+        raw_reasons = [r.strip() for r in str(row.get("复核原因", "")).split("；") if r.strip()]
+        for reason in raw_reasons:
+            if reason in BUSINESS_REASONS and _has_section(sections, "work", "工作经历"):
+                continue            # 章节读到了 -> 确实没写经历，交给业务规则
+            problems.append(reason)
+
+    if completed == "否":
+        problems.append("采集未完成")
+
+    try:
+        work_count = int(row.get("工作经历条数") or 0)
+    except (TypeError, ValueError):
+        work_count = 0
+    if work_count == 0 and sections and not _has_section(sections, "work", "工作经历"):
+        problems.append("未读到工作经历章节")
+
+    # 第一段教育的必要字段（只取第一段，所以这组字段必须齐）
+    school = (row.get("学校") or "").strip()
+    degree = (row.get("学历") or "").strip()
+    if not school:
+        problems.append("第一段教育缺学校")
+    if not degree:
+        problems.append("第一段教育缺学历")
+
+    if problems:
+        return {"collect_ok": False, "collect_reason": "；".join(dict.fromkeys(problems))}
+    return {"collect_ok": True, "collect_reason": ""}
 
 
 def screen_education(row: dict, rules: dict) -> dict:
@@ -176,7 +233,23 @@ def screen_work(row: dict, rules: dict, scorer=None, threshold_pass=None, thresh
 
 
 def screen_row(row: dict, rules: dict, scorer=None) -> dict:
-    """对一条候选人记录按顺序判定：学历 -> 工作经历门槛 -> 评分。"""
+    """对一条候选人记录按顺序判定：采集质量 -> 学历 -> 工作经历门槛 -> 评分。"""
+    gate = screen_collection(row, rules)
+    if not gate["collect_ok"]:
+        return {
+            "序号": row.get("序号", ""),
+            "姓名": row.get("姓名", ""),
+            "学校": row.get("学校", ""),
+            "学历": row.get("学历", ""),
+            "工作经历条数": row.get("工作经历条数", ""),
+            "教育结论": "—",
+            "教育原因": "—",
+            "学校匹配": row.get("学校", ""),
+            "经历结论": "—",
+            "最终结论": COLLECT_REVIEW,
+            "原因": gate["collect_reason"],
+        }
+
     edu = screen_education(row, rules)
     out = {
         "序号": row.get("序号", ""),

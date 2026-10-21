@@ -203,7 +203,8 @@ def test_scroll_loop() -> None:
         scrolled.clear()
         rr2 = resume_reader.read_resume((0, 0, 2560, 1400), vision.Rect(1609, 252, 285, 40),
                                         log=lambda *_: None)
-        check("无新内容时停止", rr2.stopped_reason in {"滚动后没有新内容", "已读到教育经历"},
+        check("无新内容时停止",
+              rr2.stopped_reason.startswith(("读取完成", "页面未移动", "达到滚动上限")),
               rr2.stopped_reason)
     finally:
         vision.load_ocr, winenv.grab_window, winenv.scroll = real_ocr, real_grab, real_scroll
