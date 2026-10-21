@@ -189,9 +189,16 @@ def screen_education(row: dict, rules: dict) -> dict:
 
 
 def work_text(row: dict) -> str:
-    """把各段工作经历拼成模型输入文本（职位 + 时间 + 职责，公司名不进特征）。"""
+    """把各段工作经历拼成模型输入文本（职位 + 时间 + 职责，公司名不进特征）。
+
+    不再限制段数：CSV 里有多少个「第 N 家…」列就用多少（导出时不再截断到 10 段）。
+    """
+    import re as _re
+
+    slots = sorted({int(m.group(1)) for key in row
+                    if (m := _re.fullmatch(r"第(\d+)家公司", key or ""))})
     parts: list[str] = []
-    for i in range(1, 11):
+    for i in slots:
         title = (row.get(f"第{i}家职位") or "").strip()
         period = (row.get(f"第{i}家起止") or "").strip()
         content = (row.get(f"第{i}家工作内容") or "").strip()

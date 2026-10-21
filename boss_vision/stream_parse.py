@@ -141,6 +141,7 @@ class StreamParser:
         self.tail: str = ""              # 上一行没写完的文本
         self.tail_screen: int = -1
         self.section_seen: list[str] = []
+        self.conflicts: list[str] = []          # 跨屏冲突：时间段相同但公司不同、字段矛盾等
 
     # ---------- 对外 ----------
 
@@ -384,7 +385,18 @@ class StreamParser:
             shared_text = any(_similar(a, b)
                               for a in existing.descriptions for b in entry.descriptions)
 
+            both_named = bool(existing.company) and bool(entry.company)
+            if both_named and same_period and not same_name:
+                self.conflicts.append(
+                    f"同一时间段 {existing.period} 出现两家公司：{existing.company} / {entry.company}")
+                continue                        # 不合并，各自保留
+
             if same_name and (same_period or not entry.period or not existing.period):
+                # 职位/公司字段矛盾时保留先读到的值，并记冲突
+                for attr, label in (("title", "职位"), ("company", "公司")):
+                    a, b = getattr(existing, attr), getattr(entry, attr)
+                    if a and b and not _similar(a, b, 0.7):
+                        self.conflicts.append(f"{existing.period} {label}不一致：{a} / {b}（保留前者）")
                 self._absorb(existing, entry)
                 return
             # 一屏只拍到时间+职责、另一屏才拍到表头：靠职责重叠认定是同一条

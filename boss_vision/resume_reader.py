@@ -108,6 +108,8 @@ class ReadResult:
     screen_count: int = 0                           # 实际读了几屏
     raw_lines: list = field(default_factory=list)   # 原始层证据：每屏每行（含重复与坐标）
     section_seen: list = field(default_factory=list)  # 读到的章节（work/edu/…）
+    conflicts: list = field(default_factory=list)     # 跨屏冲突（时间段/字段矛盾）
+    shots: list = field(default_factory=list)         # [(屏号, numpy 裁切图)]，仅内存
     review_reason: str = ""
 
     def as_dict(self) -> dict:
@@ -126,6 +128,7 @@ class ReadResult:
             "at_top": self.at_top,
             "screen_count": self.screen_count,
             "section_seen": self.section_seen,
+            "conflicts": self.conflicts,
             "incomplete": self.incomplete,
             "review_reason": self.review_reason,
         }
@@ -134,8 +137,9 @@ class ReadResult:
 def panel_band(img: np.ndarray, wide: vision.Rect) -> vision.Rect:
     """弹窗正文的识别区域：以侧栏大按钮为锚点，再按白色像素收窄上下边界。"""
     h, w = img.shape[:2]
-    x0 = max(0, wide.x - PANEL_LEFT_OFFSET)
-    x1 = min(w, max(x0 + 200, wide.x - PANEL_RIGHT_OFFSET))
+    k = vision.scale_of(wide.w, vision.REF_WIDE_W)      # 窗口缩放系数
+    x0 = max(0, wide.x - int(round(PANEL_LEFT_OFFSET * k)))
+    x1 = min(w, max(x0 + 200, wide.x - int(round(PANEL_RIGHT_OFFSET * k))))
     y0 = int(h * PANEL_TOP_RATIO)
     y1 = int(h * PANEL_BOTTOM_RATIO)
 
@@ -255,6 +259,8 @@ def read_resume(
         log(f"  第 {step + 1} 屏：{len(items)} 行，新增 {new_lines} 行")
 
         res.screen_count = step + 1
+        if len(res.shots) < 14:                 # 留证据用，内存里最多 14 屏
+            res.shots.append((step, img[band.y: band.y + band.h, band.x: band.x + band.w].copy()))
         res.text = "\n".join(ln["text"] for ln in res.lines)
 
         # 跨屏状态机解析：章节/当前经历/续行都由它维护
@@ -288,6 +294,7 @@ def read_resume(
         res.steps = step + 1
 
     parser.close()
+    res.conflicts = list(parser.conflicts)
     res.work = parser.work
     res.education = parser.education
     res.section_seen = list(parser.section_seen)
@@ -334,6 +341,10 @@ def read_resume(
             extra.append(f"{merged['added_work']} 段由侧栏补入")
         if merged["truncated"]:
             extra.append(f"{merged['truncated']} 段侧栏公司名截断")
+        if res.conflicts:
+            extra.append(f"{len(res.conflicts)} 处跨屏冲突")
+        if merged.get("conflicts"):
+            extra.append(f"{len(merged['conflicts'])} 处侧栏与正文不一致")
         if extra:
             res.review_reason = "；".join(
                 ([res.review_reason] if res.review_reason else []) + extra)
@@ -475,6 +486,7 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
     """
     filled = added_work = added_edu = truncated = 0
     notes: list[str] = []
+    conflict_sink: list[str] = []
 
     for ent in sidebar:
         name = (ent.get("company") or "").strip()
@@ -492,6 +504,10 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
             if not other or not name or _similar_name(other, name):
                 match = x
                 break
+            if other and name and period == _norm_period(x.get("period", "")):
+                notes_conflict = f"侧栏与正文同期不同单位：{name} / {other}"
+                if notes_conflict not in conflict_sink:
+                    conflict_sink.append(notes_conflict)
         if match is not None:
             if not (match.get("company") or match.get("school")):
                 if ent.get("truncated") or _is_truncated(name):
@@ -505,7 +521,17 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
                 filled += 1
             continue
 
-        # 主区域没有这一段：侧栏补进来
+        # 主区域没有同名条目，但同时间段已有别的单位 -> 只记冲突，不新增摘要条目
+        same_period = [x for x in target if _norm_period(x.get("period", "")) == period]
+        if same_period:
+            other = (same_period[0].get("company") or same_period[0].get("school") or "").strip()
+            conflict = f"侧栏与正文同期不同单位：{name} / {other}"
+            if conflict not in conflict_sink:
+                conflict_sink.append(conflict)
+            truncated += 0
+            continue
+
+        # 主区域确实没有这一段：侧栏补进来（标记为摘要）
         if ent.get("truncated") or _is_truncated(name):
             truncated += 1
             notes.append(f"{period} 主区域缺这段，侧栏公司名被截断（{name}）")
@@ -523,7 +549,7 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
         notes.append(f"{period} 由侧栏补入（摘要，正文未读取）")
 
     return {"added_work": added_work, "added_edu": added_edu, "filled": filled,
-            "truncated": truncated, "notes": notes}
+            "truncated": truncated, "notes": notes, "conflicts": conflict_sink}
 
 
 def slice_sections(text: str) -> dict[str, str]:

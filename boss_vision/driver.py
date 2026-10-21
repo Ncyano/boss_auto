@@ -315,6 +315,23 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
 
     own_write: list[float] = []          # 记录本进程上次写文件的时间，用于识别"被别人覆盖"
 
+    def save_shots(shots: list, index: int) -> None:
+        """只对"需复核"的候选人把逐屏截图落盘，方便事后肉眼核对。"""
+        if not shots:
+            return
+        try:
+            from PIL import Image
+
+            folder = OUT / f"{stamps}-shots"
+            folder.mkdir(parents=True, exist_ok=True)
+            for screen, arr in shots:
+                path = folder / f"{index:02d}-{screen:02d}.png"
+                Image.fromarray(arr[:, :, ::-1]).save(path)
+            print(f"     已保存 {len(shots)} 张逐屏截图 -> {folder}")
+        except Exception as exc:
+            print(f"     [warn] 截图保存失败：{exc}")
+
+
     def dump_results(with_csv: bool = True) -> None:
         """把已处理的结果落盘：results.json + 带工作内容的 summary.csv。
 
@@ -329,13 +346,9 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 if ours is not None and abs(mtime - ours) > 0.001:
                     print(f"[跳过] {json_path.name} 已被其他进程改写，保留较新的那份")
                     return
-            try:
-                import textfix      # 落盘前统一套一遍错字表
-
-                clean = [textfix.fix_obj(r) for r in results]
-            except Exception:
-                clean = results
-            json_path.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+            # 原始层不做任何文本替换：错字表只在导出 CSV / 筛选时套用，原文永远可追溯
+            json_path.write_text(json.dumps(results, ensure_ascii=False, indent=2),
+                                 encoding="utf-8")
             own_write[:] = [json_path.stat().st_mtime]
             print(f"\n结果已写入 {json_path}（{len(results)} 条）")
         except Exception as exc:  # 落盘失败不能影响退出
@@ -556,11 +569,13 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         "section_seen": rr.section_seen,
                         "ocr_lines": rr.raw_lines,
                         "sidebar_entries": rr.sidebar,
+                        "conflicts": rr.conflicts,
                         "needs_review": bool(rr.incomplete),
                         "review_reason": rr.review_reason,
                     })
                     if rr.incomplete:
                         print(f"     ⚠ 需复核：{rr.review_reason}")
+                        save_shots(rr.shots, handled + 1)
                     print(f"     {rr.name or '(未识别姓名)'}：滚了 {rr.steps} 屏，读到 {len(rr.text)} 字；"
                           f"工作经历 {len(rr.work)} 条 / 教育经历 {len(rr.education)} 条；"
                           f"停止原因={rr.stopped_reason}")

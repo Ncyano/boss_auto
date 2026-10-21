@@ -90,19 +90,36 @@ def wide_buttons(boxes: list[Rect]) -> list[Rect]:
     return [b for b in boxes if b.w >= 200 and 25 <= b.h <= 70]
 
 
+# ---- 尺度自适应 ----
+# 所有偏移都是按 2560x1400 窗口、100% 缩放实测的。
+# 运行时用检测到的按钮宽度反推缩放系数 k，换分辨率 / 改 DPI 时几何关系依然成立。
+REF_BUTTON_W = 92.0
+REF_WIDE_W = 285.0
+
+
+def scale_of(actual: float, ref: float = REF_BUTTON_W) -> float:
+    """按实测宽度推算缩放系数（限制在 0.3~3 之间，防止异常值）。"""
+    if not actual or not ref:
+        return 1.0
+    return max(0.3, min(3.0, float(actual) / float(ref)))
+
+
 def card_for(button: Rect, card_w: int = 1212, top_offset: int = 39) -> Rect:
     """由「打招呼」按钮反推卡片区域。
 
     实测（2560x1400 窗口）：按钮贴卡片右缘（右缘再外扩 38px），卡片高 172px，
     按钮垂直中心比卡片顶边低 39px。全部用**按钮相对偏移**表达，卡片位置变了也不影响。
     """
-    left = max(0, button.x + button.w + 38 - card_w)
-    return Rect(left, max(0, button.cy - top_offset), card_w, 172)
+    k = scale_of(button.w)
+    left = max(0, button.x + button.w + int(round(38 * k)) - int(round(card_w * k)))
+    return Rect(left, max(0, button.cy - int(round(top_offset * k))), int(round(card_w * k)),
+                int(round(172 * k)))
 
 
 def click_into_resume(button: Rect) -> tuple[int, int]:
     """点开线上简历的落点：卡片中部偏左的「时间/经历」文字区，避开按钮与公司名链接。"""
-    return button.x - 560, button.cy + 40
+    k = scale_of(button.w)
+    return button.x - int(round(560 * k)), button.cy + int(round(40 * k))
 
 
 def close_button(wide: Rect) -> tuple[int, int]:
@@ -172,8 +189,9 @@ def progress_icon(img: np.ndarray, btn: Rect) -> dict:
     这一排可能有 1~2 个图标（饼图 / 人像），且右对齐：只有饼图时它会挪到人像的位置上。
     所以不能数"青色像素"（两者都是青色、像素数相同），必须按**形状**模板匹配。
     """
-    y0, y1 = max(0, btn.cy - 24), min(img.shape[0], btn.cy + 24)
-    x0, x1 = max(0, btn.x - 112), min(img.shape[1], btn.x - 2)
+    k = scale_of(btn.w)
+    y0, y1 = max(0, btn.cy - int(round(24 * k))), min(img.shape[0], btn.cy + int(round(24 * k)))
+    x0, x1 = max(0, btn.x - int(round(112 * k))), min(img.shape[1], btn.x - int(round(2 * k)))
     strip = img[y0:y1, x0:x1]
     if strip.size == 0:
         return {"score": 0.0, "present": False, "ambiguous": False, "pixels": 0}
