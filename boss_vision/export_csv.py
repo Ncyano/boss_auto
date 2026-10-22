@@ -26,7 +26,7 @@ HEAD_COLUMNS = ("批次", "序号", "姓名", "年龄", "学历性质", "毕业�
                 "已打开", "工作经历条数")
 TAIL_COLUMNS = ("教育条数", "学校", "专业", "学历", "教育起止", "滚屏数", "停止原因",
                 "采集完成", "识别方式", "屏数", "读到章节", "冲突数", "缺失字段", "姓名候选",
-                "需复核", "复核原因", "间隔(秒)")
+                "需复核", "复核原因", "判定结论", "判定依据", "判定环节", "间隔(秒)")
 
 # 控制台只显示精简列（10 家全展开太宽，CSV 里是全量）
 TABLE_COLUMNS = ("序号", "姓名", "已打开", "工作经历条数",
@@ -111,6 +111,9 @@ def row_of(rec: dict, batch: str | None = None) -> dict[str, object]:
         "姓名候选": "/".join(rec.get("name_candidates") or []),
         "需复核": "是" if rec.get("needs_review") else "否",
         "复核原因": rec.get("review_reason", ""),
+        "判定结论": (rec.get("judgment") or {}).get("verdict", ""),
+        "判定依据": (rec.get("judgment") or {}).get("reason", ""),
+        "判定环节": (rec.get("judgment") or {}).get("stage", ""),
         "间隔(秒)": rec.get("gap_before_next", ""),
     })
     return row

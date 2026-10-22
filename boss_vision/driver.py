@@ -650,6 +650,18 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 record["sections"] = secs
                 print(f"     读到正文 {len(text)} 字；切出小节 {list(secs)}")
                 (OUT / f"{stamps}-resume-{handled + 1}.txt").write_text(text, encoding="utf-8")
+            # 逐条判定：学历硬规则通过后立即做"合适/不合适"二分类（不点击打招呼）
+            try:
+                import judge_inline
+                verdict = judge_inline.judge_record(record)
+                record["judgment"] = verdict
+                print(f"     ➜ 判定：{verdict['verdict']}"
+                      f"（{verdict['stage']}层｜{verdict['reason'][:60]}）")
+            except Exception as exc:
+                record["judgment"] = {"verdict": "不合适", "reason": f"判定异常：{exc}"[:120],
+                                      "stage": "error"}
+                print(f"     [warn] 判定失败：{exc}")
+
             results.append(record)
             last_record_at[:] = [time.time()]
             dump_results(with_csv=False)   # 增量只写 json，csv 在结束时统一生成
