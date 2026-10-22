@@ -194,6 +194,50 @@ def _check_school_work_overlap(education: list, work: list, params: dict) -> lis
             break
     return problems
 
+def _title_hits(entry: dict, titles: list[str]) -> list[str]:
+    """职位/职责里命中的岗位词（取最长匹配，避免"客服"吞掉"售前客服"）。"""
+    text = " ".join([str(entry.get("title") or "")] +
+                    [str(x) for x in (entry.get("descriptions") or [])])
+    hits = [t for t in titles if t and t in text]
+    return sorted(hits, key=len, reverse=True)
+
+
+def _check_job_profile(work: list, params: dict) -> tuple[list[dict], list[str]]:
+    """按人才画像判岗位偏差。
+
+    返回 (是否触发 NP01 的失败项, 命中的优先岗位词)。
+    规则：所有经历都在排除清单里、且没有任何一条命中优先清单 -> 不合适。
+    """
+    exclude = params.get("exclude_titles") or []
+    prefer = params.get("prefer_titles") or []
+    if not work:
+        return [], []
+
+    prefer_hits: list[str] = []
+    exclude_hits: list[str] = []
+    unclassified = 0
+    for entry in work:
+        ph = _title_hits(entry, prefer)
+        if ph:
+            prefer_hits.extend(ph)
+            continue
+        eh = _title_hits(entry, exclude)
+        if eh:
+            exclude_hits.extend(eh)
+        else:
+            unclassified += 1
+
+    if prefer_hits:
+        return [], prefer_hits          # 有优先岗位经历 -> 正向，不判死
+
+    # 没有任何优先岗位：如果每段都能归到排除清单（没有"未分类"经历），判不合适
+    if exclude_hits and unclassified == 0:
+        top = sorted(set(exclude_hits), key=len, reverse=True)[:3]
+        return [{"rule": "NP01",
+                 "reason": f"工作经历均为排除岗位（{'、'.join(top)}），无沟通/销售/运营类经验",
+                 "evidence": "、".join(sorted(set(exclude_hits))[:4])}], []
+    return [], []
+
 def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     """按知识库执行硬规则，返回判定与全部提示。
 
@@ -320,6 +364,16 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     if hit_word:
         failures.append({"rule": "P04", "reason": f"求职状态含「{hit_word}」（{status_text}）",
                          "evidence": status_text})
+
+    # NP01 / W07：按人事人才画像判岗位偏差
+    profile_fail, prefer_hits = _check_job_profile(work, {
+        **(params_of(kb, "NP01") or {}),
+        "prefer_titles": (params_of(kb, "NP01") or {}).get("prefer_titles")
+                         or (params_of(kb, "W07") or {}).get("prefer_titles") or [],
+    })
+    failures.extend(profile_fail)
+    if prefer_hits:
+        advisories.append(f"命中优先岗位：{'、'.join(sorted(set(prefer_hits))[:3])}")
 
     # P06：在校期间长期工作（无实习标记）
     failures.extend(_check_school_work_overlap(education, work, params_of(kb, "P06")))

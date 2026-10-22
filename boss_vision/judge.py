@@ -141,13 +141,24 @@ def extract_json(text: str) -> dict | None:
 
 
 def rule_brief(kb: dict) -> str:
-    """把 W01–W05 整理成提示词里的规则清单。"""
+    """把 W01–W05 与画像清单整理成提示词里的规则部分。"""
     lines = []
     for rule in kbmod.enabled_work_rules(kb):
         cond = (rule.get("condition") or "").strip()
         note = (rule.get("note") or "").strip()
         lines.append(f"- {rule['id']} {rule.get('title', '')}：{cond}"
                      + (f"（注意：{note}）" if note else ""))
+
+    params = kbmod.params_of(kb, "W07") or {}
+    prefer = params.get("prefer_titles") or []
+    exclude = (kbmod.params_of(kb, "NP01") or {}).get("exclude_titles") or []
+    if prefer:
+        lines.append("\n【优先考虑岗位】（命中即强正向，可建议合适）：\n"
+                     + "、".join(prefer))
+    if exclude:
+        lines.append("\n【不考虑岗位】（只做技术/职能/生产，无对客户沟通）：\n"
+                     + "、".join(exclude)
+                     + "\n注意：只要有一段经历属于『优先考虑』清单，就不因其它经历是排除岗位而否定。")
     return "\n".join(lines)
 
 

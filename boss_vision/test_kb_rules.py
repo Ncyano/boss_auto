@@ -180,6 +180,39 @@ def main() -> int:
                                                 "period": "2022.03-2023.09",
                                                 "descriptions": ["兼职客服，每周20小时"]}]}, data)
     check("职责写兼职 -> 豁免", intern2["verdict"] != "不合适", intern2["verdict"])
+
+    print("\n[8] 人才画像：优先岗位 / 排除岗位（NP01）")
+    data2 = kbmod.load()
+    pbase = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2018-2022",
+                            "mode": "全日制"}],
+             "collection": {"complete": True, "needs_review": False},
+             "basic": {"age": 26, "education_mode": "全日制"}, "gap_months": 0,
+             "total_work_months": 40}
+    pure_tech = kbmod.evaluate({**pbase, "work": [
+        {"company": "甲", "title": "测试工程师", "period": "2022-2024", "descriptions": ["功能测试"]},
+        {"company": "乙", "title": "前端开发", "period": "2024-2025", "descriptions": ["页面开发"]},
+    ]}, data2)
+    check("全是排除岗 -> 不合适", pure_tech["verdict"] == "不合适", pure_tech["verdict"])
+    check("命中 NP01", any(f["rule"] == "NP01" for f in pure_tech["failures"]),
+          str([f["rule"] for f in pure_tech["failures"]]))
+
+    customer = kbmod.evaluate({**pbase, "work": [
+        {"company": "丙", "title": "售前客服", "period": "2022-2025", "descriptions": ["接待客户"]},
+    ]}, data2)
+    check("优先岗位 -> 不判死", customer["verdict"] != "不合适", customer["verdict"])
+    check("记录命中优先岗位",
+          any("优先岗位" in a for a in customer["advisories"]), str(customer["advisories"]))
+
+    mixed = kbmod.evaluate({**pbase, "work": [
+        {"company": "丙", "title": "售前客服", "period": "2022-2023", "descriptions": ["接待"]},
+        {"company": "丁", "title": "后端开发", "period": "2023-2025", "descriptions": ["接口"]},
+    ]}, data2)
+    check("客服+开发 -> 不判死（允许转行）", mixed["verdict"] != "不合适", mixed["verdict"])
+
+    unknown = kbmod.evaluate({**pbase, "work": [
+        {"company": "戊", "title": "教师", "period": "2022-2025", "descriptions": ["授课"]},
+    ]}, data2)
+    check("未分类岗位 -> 不判死", unknown["verdict"] != "不合适", unknown["verdict"])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
