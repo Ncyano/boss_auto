@@ -385,6 +385,14 @@ NON_NAME_WORDS = {
     "离校", "到岗", "活跃", "暂无", "空字符串", "无", "看不清", "姓名", "候选人",
 }
 
+# 职位/标签类词：这些出现在"姓名"里说明抓到的是简历标签或职位，不是人名
+TAG_WORDS = {
+    "优化", "投放", "成本", "运营", "客服", "销售", "专员", "经理", "主管", "助理",
+    "总监", "编辑", "剪辑", "设计", "开发", "工程", "管理", "推广", "采购", "财务",
+    "人事", "行政", "仓储", "物流", "外贸", "文员", "主播", "导购", "实习", "兼职",
+    "数据分析", "新媒体", "电商", "跨境", "店铺", "账号", "视频", "直播", "标签",
+}
+
 
 def is_plausible_name(text: str) -> bool:
     """判断是不是一个像样的姓名。
@@ -395,7 +403,12 @@ def is_plausible_name(text: str) -> bool:
     t = (text or "").strip()
     if not t or t in NON_NAME_WORDS:
         return False
-    if HANZI.match(t) or LATIN.match(t):
+    if any(w in t for w in TAG_WORDS):
+        return False
+    if HANZI.match(t):
+        # 中文姓名一般 2~4 字；5~6 字要额外确认不含标签词（上面已排除）
+        return True
+    if LATIN.match(t):
         return True
     return False
 

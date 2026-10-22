@@ -215,6 +215,28 @@ def dedupe_key(row: dict) -> tuple:
             str(row.get("第1家起止", "")).strip())
 
 
+def dedupe_rows(rows: list[dict]) -> list[dict]:
+    """同一人只留一条（同名覆盖，保留后到的）。
+
+    driver 采集时已按指纹去重，这里再兜一层：万一指纹没命中（学校/公司读到差异），
+    同名记录也不会重复出现在汇总表里。
+    """
+    out: list[dict] = []
+    index: dict[str, int] = {}
+    for row in rows:
+        name = str(row.get("姓名", "") or "").strip()
+        if not name:
+            out.append(row)
+            continue
+        if name in index:
+            out[index[name]] = row
+        else:
+            index[name] = len(out)
+            out.append(row)
+    for i, row in enumerate(out, 1):
+        row["序号"] = i
+    return out
+
 def merge_into_daily(runs_dir: Path, new_rows: list[dict], day: str | None = None) -> Path | None:
     """把本次采集的结果并进「当天那张表」，没有就新建。"""
     if not new_rows:

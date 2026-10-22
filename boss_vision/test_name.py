@@ -54,6 +54,12 @@ def main() -> int:
     for good in ["吴女士", "郑颖", "陈晶晶", "云中客", "mustard", "程女士"]:
         check(f"{good!r} 是姓名", vlm.is_plausible_name(good))
 
+    print("\n[1c] 标签词不能当姓名")
+    for bad in ["优化投放成本", "客服专员", "新媒体运营", "店铺运营", "数据分析"]:
+        check(f"{bad!r} 不算姓名", not vlm.is_plausible_name(bad))
+    for good in ["谢女士", "华为钰", "邬子晴", "琳琳"]:
+        check(f"{good!r} 是姓名", vlm.is_plausible_name(good))
+
     print("\n[2] 真实截图：面板里的姓名")
     panel = FIX / "panel-zhangjinmin.png"
     if panel.exists():

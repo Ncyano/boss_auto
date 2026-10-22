@@ -304,6 +304,8 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
     stamps = time.strftime("%Y%m%d-%H%M%S")
     OUT.mkdir(exist_ok=True)
     results: list[dict] = []
+    _seen_people: set = set()          # 已采集过的候选人指纹（去重）
+    duplicate_skipped = 0              # 因重复被跳过的次数
     handled = 0
     valid = 0                    # 真正打开并读到内容的次数（"有效人次"）
     PROGRESS.update({"handled": 0, "valid": 0, "target": limit, "state": "running"})
@@ -372,6 +374,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 rows = [export_csv.row_of(textfix.fix_obj(rec)) for rec in results]
             except Exception:
                 rows = [export_csv.row_of(rec) for rec in results]
+            rows = export_csv.dedupe_rows(rows)      # 同一人只留一条
             export_csv.write_csv(OUT / f"{stamps}-summary.csv", rows)
             export_csv.merge_into_daily(OUT, rows)   # 当天那张表：按日期命名并累计
         except Exception as exc:
@@ -628,6 +631,18 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                     if rr.incomplete:
                         print(f"     ⚠ 需复核：{rr.review_reason}")
                         save_shots(rr.shots, handled + 1)
+                    # 弹窗里的姓名不合法（抓到标签/职位）时，改用列表卡片上的姓名
+                    try:
+                        import vlm as _vlm
+                        if card_name and not _vlm.is_plausible_name(rr.name or ""):
+                            if rr.name:
+                                print(f"     姓名不可用（{rr.name}），改用卡片姓名 {card_name}")
+                            rr.name = card_name
+                            rr.review_reason = ((rr.review_reason + "；") if rr.review_reason else "") + \
+                                "姓名取自列表卡片"
+                    except Exception:
+                        pass
+
                     if not rr.name and card_name:
                         rr.name = card_name
                         rr.review_reason = ((rr.review_reason + "；") if rr.review_reason else "") + \
@@ -650,6 +665,30 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 record["sections"] = secs
                 print(f"     读到正文 {len(text)} 字；切出小节 {list(secs)}")
                 (OUT / f"{stamps}-resume-{handled + 1}.txt").write_text(text, encoding="utf-8")
+            # 去重：同一个人被重复点开时（滚动后卡片位置变了会重复出现），只保留第一次
+            try:
+                def _fp(rec: dict) -> tuple:
+                    edu = (rec.get("education") or [{}])[0]
+                    work = (rec.get("work") or [{}])[0]
+                    return (
+                        (rec.get("name") or "").strip(),
+                        (edu.get("school") or "").strip(),
+                        (work.get("company") or "").strip(),
+                        (work.get("period") or "").replace(" ", ""),
+                    )
+
+                fingerprint = _fp(record)
+                if any(fingerprint) and fingerprint[0]:
+                    if fingerprint in _seen_people:
+                        # 同一人：不记录、不判定，直接跳过（结果里不留空行）
+                        print(f"     ↺ {record.get('name')} 与之前重复"
+                              f"（{fingerprint[1] or '无学校'}），跳过")
+                        duplicate_skipped += 1
+                        continue
+                    _seen_people.add(fingerprint)
+            except Exception as exc:
+                print(f"     [warn] 去重检查失败：{exc}")
+
             # 逐条判定：学历硬规则通过后立即做"合适/不合适"二分类（不点击打招呼）
             try:
                 import judge_inline
@@ -703,6 +742,8 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 verdicts[v] = verdicts.get(v, 0) + 1
         if verdicts:
             parts = "，".join(f"{k} {v}" for k, v in verdicts.items())
+            if duplicate_skipped:
+                print(f"重复跳过：{duplicate_skipped} 次（同一人重复出现）")
             print(f"判定汇总：{parts}")
             for rec in results:
                 j = rec.get("judgment") or {}

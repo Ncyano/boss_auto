@@ -159,10 +159,26 @@ def test_name_dispute() -> None:
     check("无冲突时正常通过", screening.screen_collection(ok_row, screening.load_rules())["collect_ok"])
 
 
+def test_dedupe() -> None:
+    print("\n[4] 同一人只留一条")
+    import export_csv
+    rows = [
+        {"序号": 1, "姓名": "谢女士", "学校": "福建师范大学"},
+        {"序号": 2, "姓名": "谢女士", "学校": "福建师范大学"},
+        {"序号": 3, "姓名": "张三", "学校": "厦门大学"},
+        {"序号": 4, "姓名": "", "学校": "无"},
+    ]
+    out = export_csv.dedupe_rows(rows)
+    check("重复姓名合并", len(out) == 3, str(len(out)))
+    check("序号重排", [r["序号"] for r in out] == [1, 2, 3], str([r["序号"] for r in out]))
+    check("空姓名保留", any(r["姓名"] == "" for r in out))
+
+
 def main() -> int:
     test_fragments()
     test_education_continue()
     test_name_dispute()
+    test_dedupe()
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
