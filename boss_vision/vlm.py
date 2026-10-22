@@ -200,9 +200,12 @@ def read_screen(bgr, cfg: dict | None = None, log=print) -> dict:
 
 def normalize_basic(raw: dict) -> dict:
     """整理简历顶部基本信息（年龄/学习形式/毕业年份/求职状态）。"""
-    if isinstance(raw, dict) and "basic" in raw and not raw.get("sections"):
-        raw = raw.get("basic") or {}
-    basic = raw if isinstance(raw, dict) else {}
+    if isinstance(raw, dict) and isinstance(raw.get("basic"), dict):
+        basic = raw["basic"]            # read_screen 的返回：{"name","basic","sections",...}
+    elif isinstance(raw, dict):
+        basic = raw                     # 直接传 {"age":...}
+    else:
+        basic = {}
     out = {"age": None, "education_mode": "", "graduation_year": None, "status": ""}
     age = str(basic.get("age") or "").strip()
     if age.isdigit() and 15 <= int(age) <= 70:
@@ -497,6 +500,30 @@ def name_consensus_detail(img, band, cfg: dict | None = None, log=print) -> dict
         "votes": votes,
         "disputed": len(uniq) > 1,
     }
+
+NON_FULLTIME_KEYS = ("非全日制", "函授", "自考", "成人教育", "业余", "网络教育", "国开", "开放大学")
+
+
+def scan_education_mode(img) -> str:
+    """用 OCR 在截图里直接找「非全日制」这类字样。
+
+    视觉模型会把「本科 · 非全日制」读成「全日制」（实测），而这条一旦判错，
+    人事规则会直接放行不合格的人。所以用关键词做一次硬校验，命中就以 OCR 为准。
+    """
+    try:
+        import vision as _v
+        engine = _v.load_ocr()
+        if engine is None:
+            return ""
+        items = _v.ocr_crop(engine, img, _v.Rect(0, 0, img.shape[1], img.shape[0]))
+        text = " ".join((it.get("text") or "") for it in items).replace(" ", "")
+        for key in NON_FULLTIME_KEYS:
+            if key in text:
+                return "非全日制"
+        return ""
+    except Exception:
+        return ""
+
 
 def self_test() -> int:
     """不需要 key 的自检：配置、JSON 抠取、归一、合并。"""

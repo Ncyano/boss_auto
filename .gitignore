@@ -34,3 +34,8 @@ data/vlm-config.json
 
 # 人事筛选表（含候选人信息）
 未命名表格.xlsx
+
+# 人事简历转换结果（含候选人信息）
+data/hr-resumes-采集格式.csv
+data/hr-labels.csv
+boss_vision/runs/hr-shots/
