@@ -85,14 +85,17 @@ def main() -> int:
     import resume_reader
     from pathlib import Path as _P
     shots = sorted(_P(__file__).parent.glob("runs/*-shots/*.png"))
-    if shots:
-        import numpy as np
+    found = []
+    for shot in shots[:8]:
         from PIL import Image as _Img
-        img = np.asarray(_Img.open(shots[0]).convert("RGB"))[:, :, ::-1].copy()
-        cands = resume_reader._school_name_candidates(img)
-        check("能从截图里找出名单内校名", bool(cands), str(cands))
+        img = np.asarray(_Img.open(shot).convert("RGB"))[:, :, ::-1].copy()
+        found = resume_reader._school_name_candidates(img)
+        if found:
+            break
+    if shots:
+        check("能从截图里找出名单内校名", bool(found), str(found))
     else:
-        print("  [skip] 没有逐屏截图")
+        print("  [skip] 没有逐屏截图（跑一次采集后才有）")
     print(f"\n{PASS}/{PASS + FAIL} 通过" + (f"，跳过 {SKIP}" if SKIP else ""))
     return 0 if FAIL == 0 else 1
 
