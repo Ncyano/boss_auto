@@ -835,6 +835,22 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     except Exception as exc:
         log(f"  [warn] 教育信息补采失败：{exc}")
 
+    # ---------- 定向补采 0b：学校名二次校验（VLM 易把"长江"读成"长沙"） ----------
+    try:
+        if education and edu_screens:
+            shots_by_step3 = {step: crop for step, crop in res.shots}
+            crop3 = shots_by_step3.get(edu_screens[0])
+            school_now = (education[0].get("school") or "").strip()
+            if crop3 is not None and school_now:
+                fixed, note = _verify_school_name(crop3, school_now, cfg, log=log)
+                if fixed != school_now:
+                    education[0]["school"] = fixed
+                    education[0]["school_raw"] = school_now
+                    if note:
+                        res.conflicts.append(note)
+    except Exception as exc:
+        log(f"  [warn] 校名二次校验失败：{exc}")
+
     # 毕业年份兜底：用教育起止的结束年
     try:
         if not res.basic.get("graduation_year") and education:
@@ -1000,6 +1016,91 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
     if len(candidates or []) == 1:
         return candidates[0]
     return None
+
+def _school_name_candidates(crop) -> list[str]:
+    """在教育屏截图里用 OCR 找"像校名"的文本，并只保留名单内的。"""
+    try:
+        import schools as _schools
+        engine = vision.load_ocr()
+        if engine is None:
+            return []
+        items = vision.ocr_crop(engine, crop, vision.Rect(0, 0, crop.shape[1], crop.shape[0]))
+        out: list[str] = []
+        for it in items:
+            text = (it.get("text") or "").strip()
+            if len(text) < 4 or not any(k in text for k in ("大学", "学院", "学校")):
+                continue
+            # OCR 常把学校/专业/学历合并成一行（"XX学院丨数字媒体丨大专"），先拆再试
+            parts = [x for x in re.split(r"[丨|｜/／、,，\s]+", text) if len(x) >= 4]
+            parts.append(text)
+            for part in parts:
+                if not any(k in part for k in ("大学", "学院", "学校")):
+                    continue
+                hit = _schools.lookup(part)
+                if hit.get("listed") and hit.get("matched"):
+                    if hit["matched"] not in out:
+                        out.append(hit["matched"])
+                    continue
+                # 前缀尝试：从长到短截断，找到名单内的校名
+                for cut in range(len(part), 3, -1):
+                    head = part[:cut]
+                    if not any(k in head for k in ("大学", "学院", "学校")):
+                        continue
+                    h2 = _schools.lookup(head)
+                    if h2.get("listed") and h2.get("matched"):
+                        if h2["matched"] not in out:
+                            out.append(h2["matched"])
+                        break
+        return out
+    except Exception:
+        return []
+
+
+def _verify_school_name(crop, vlm_school: str, cfg: dict, log=print) -> tuple[str, str]:
+    """学校名二次校验：VLM 与 OCR 不一致时，再用放大重读投票。
+
+    返回 (最终校名, 说明)。实测 VLM 会把「长江职业学院」读成「长沙职业技术学院」，
+    两所都是真学校，只能靠字符级 OCR + 放大重读投票来纠正。
+    """
+    import difflib
+
+    import vlm as _vlm          # 局部导入，避免模块级循环依赖
+
+    cands = _school_name_candidates(crop)
+    if not cands:
+        return vlm_school, ""
+    best = max(cands, key=lambda c: difflib.SequenceMatcher(None, c, vlm_school).ratio())
+    if best == vlm_school:
+        return vlm_school, ""
+
+    sim = difflib.SequenceMatcher(None, best, vlm_school).ratio()
+    if sim < 0.45:
+        return vlm_school, ""          # 差太多，可能是另一段经历，不乱改
+
+    # 两票不一致 -> 放大重读教育区再投一次
+    zoom = dict(cfg)
+    zoom["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+    votes = [vlm_school, best]
+    try:
+        raw = _vlm.read_screen(crop, zoom, log=lambda *_: None)
+        edu_zoom = _vlm.normalize(raw.get("sections") or {})
+        zoom_school = ""
+        if edu_zoom.get("education"):
+            zoom_school = (edu_zoom["education"][0].get("school") or "").strip()
+        if zoom_school:
+            votes.append(zoom_school)
+    except Exception as exc:
+        log(f"    [warn] 校名复核重读失败：{exc}")
+
+    # 平票时优先采纳 OCR（逐字读取比整屏理解更可靠）
+    counted = [(v, votes.count(v)) for v in dict.fromkeys(votes)]
+    counted.sort(key=lambda item: (item[1], item[0] == best), reverse=True)
+    final = counted[0][0]
+    if final != vlm_school:
+        log(f"  校名二次校验：VLM={vlm_school} / OCR={best} → 采用 {final}"
+            f"（票数 {votes.count(final)}/{len(votes)}）")
+        return final, f"校名已纠正：原读作 {vlm_school}"
+    return vlm_school, ""
 
 def _name_by_ocr(img, band, log=print) -> str:
     """姓名兜底：只在顶部一小块跑 OCR（约 0.2 秒），模型没读到时用。"""
