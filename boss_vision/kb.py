@@ -350,8 +350,12 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
             advisories.append(f"最近空档 {gap} 个月（上限 {gap_max}）")
 
     peers = params_of(kb, "P03").get("blacklist") or []
-    for i in range(1, 11):
-        company = resume.get(f"company_{i}") or ""
+    companies = [(w.get("company") or "").strip() for w in work]
+    if not any(companies):            # 兼容旧接口：只给了 company_N
+        companies = [resume.get(f"company_{i}") or "" for i in range(1, 11)]
+    for company in companies:
+        if not company:
+            continue
         hit = next((k for k in peers if k and k in company), "")
         if hit:
             failures.append({"rule": "P03", "reason": f"同行公司（{hit}）：{company}",

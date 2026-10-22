@@ -225,6 +225,25 @@ def main() -> int:
         out = kbmod.evaluate({**abase, "basic": {"age": age, "education_mode": "全日制"}}, data)
         hit = any(f["rule"] == "A01" for f in out["failures"])
         check(f"{age} 岁 {'判死' if want else '放行'}", hit == want, out["reason"][:30])
+
+    print("\n[10] 同行名单（7 家）")
+    pbase2 = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2018-2022",
+                             "mode": "全日制"}],
+              "collection": {"complete": True, "needs_review": False},
+              "gap_months": 1, "total_work_months": 36,
+              "basic": {"age": 26, "education_mode": "全日制"}}
+    peers = ["南昌南风网络有限公司", "正北传媒", "福州云上源严选网络科技有限公司",
+             "福州飞云好物网络有限公司", "福州谷一科技有限公司", "福州谷二科技有限公司",
+             "谷三网络", "一硕网络有限公司", "天成卓越网络科技有限公司"]
+    for name in peers:
+        out = kbmod.evaluate({**pbase2, "work": [
+            {"company": name, "title": "售前客服", "period": "2022.07-2025.06",
+             "descriptions": ["接待客户"]}]}, data)
+        check(f"同行 {name[:8]} 判死", out["verdict"] == "不合适", out["verdict"])
+    okay = kbmod.evaluate({**pbase2, "work": [
+        {"company": "福州某正常电商有限公司", "title": "售前客服",
+         "period": "2022.07-2025.06", "descriptions": ["接待客户"]}]}, data)
+    check("非同行放行", okay["verdict"] != "不合适", okay["verdict"])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
