@@ -90,6 +90,109 @@ def degree_level(text: str) -> int:
     return -1
 
 
+_SEP_RE = re.compile(r"\s*[-–—~至到]+\s*")
+_POINT_RE = re.compile(r"^(\d{4})(?:[.\-/年]?(\d{1,2}))?月?$")
+
+
+def _month_index(year: int, month: int) -> int:
+    return year * 12 + month
+
+
+def _parse_point(text: str, default_month: int) -> int | None:
+    """'2022' / '2022.03' / '2022年3月' -> 月序号。"""
+    t = (text or "").strip().replace("月", "")
+    if not t:
+        return None
+    m = _POINT_RE.match(t)
+    if not m:
+        # 兜底：取出前 4 位年份
+        m2 = re.match(r"^(\d{4})", t)
+        if not m2:
+            return None
+        return _month_index(int(m2.group(1)), default_month)
+    year = int(m.group(1))
+    month = int(m.group(2)) if m.group(2) else default_month
+    if not (1 <= month <= 12):
+        month = default_month
+    return _month_index(year, month)
+
+
+def _span(period: str, start_month: int = 1, end_month: int = 12,
+          is_edu: bool = False) -> tuple[int, int] | None:
+    """把起止解析成 (起始月序号, 结束月序号)。"""
+    text = (period or "").replace(" ", "")
+    if not text:
+        return None
+
+    begin_default = start_month if is_edu else 1
+    end_default = end_month if is_edu else 12
+
+    if "至今" in text or "现在" in text:
+        import datetime as _dt
+        head = _SEP_RE.split(text.split("至今")[0].split("现在")[0])[0]
+        start = _parse_point(head, begin_default)
+        now = _dt.date.today()
+        return (start if start is not None else _month_index(now.year, now.month),
+                _month_index(now.year, now.month))
+
+    halves = [x for x in _SEP_RE.split(text) if x]
+    if not halves:
+        return None
+    start = _parse_point(halves[0], begin_default)
+    if start is None:
+        return None
+    if len(halves) >= 2:
+        end = _parse_point(halves[-1], end_default)
+    else:
+        end = start + (10 if is_edu else 0)
+    if end is None:
+        end = start
+    if end < start:
+        end = start
+    return start, end
+
+
+def overlap_months(edu_period: str, work_period: str) -> int:
+    """教育时间段与某段工作的重合月数（教育按 9 月入学 / 6 月毕业）。"""
+    edu = _span(edu_period, start_month=9, end_month=6, is_edu=True)
+    work = _span(work_period)
+    if not edu or not work:
+        return 0
+    return max(0, min(edu[1], work[1]) - max(edu[0], work[0]))
+
+
+_INTERN_MARKERS = ("实习", "兼职", "勤工", "实训", "见习", "part-time", "intern")
+
+
+def _is_intern(entry: dict, markers: list[str]) -> bool:
+    text = " ".join([str(entry.get("title") or "")] +
+                    [str(x) for x in (entry.get("descriptions") or [])])
+    low = text.lower()
+    return any(m.lower() in low for m in markers)
+
+
+def _check_school_work_overlap(education: list, work: list, params: dict) -> list[dict]:
+    """在校期间工作：重合 ≥ N 个月且没有实习标记 -> 不合格。"""
+    if not education or not work:
+        return []
+    min_overlap = int(params.get("min_overlap_months", 12))
+    markers = params.get("intern_markers") or list(_INTERN_MARKERS)
+    edu_period = (education[0].get("period") or "")
+    if not edu_period:
+        return []
+    problems = []
+    for idx, entry in enumerate(work, 1):
+        months = overlap_months(edu_period, entry.get("period") or "")
+        if months >= min_overlap and not _is_intern(entry, markers):
+            problems.append({
+                "rule": "P06",
+                "reason": f"在校期间工作 {months} 个月（第{idx}家）："
+                          f"{entry.get('company') or ''} {entry.get('title') or ''}",
+                "evidence": f"教育 {edu_period} / 工作 {entry.get('period')}",
+            })
+            break
+    return problems
+
 def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     """按知识库执行硬规则，返回判定与全部提示。
 
@@ -216,6 +319,9 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     if hit_word:
         failures.append({"rule": "P04", "reason": f"求职状态含「{hit_word}」（{status_text}）",
                          "evidence": status_text})
+
+    # P06：在校期间长期工作（无实习标记）
+    failures.extend(_check_school_work_overlap(education, work, params_of(kb, "P06")))
 
     months = resume.get("total_work_months")
     min_months = params_of(kb, "P01").get("min_months", 6)

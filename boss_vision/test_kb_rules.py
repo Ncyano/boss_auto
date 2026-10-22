@@ -128,6 +128,41 @@ def main() -> int:
     test_rejections()
     test_new_hard_rules()
     test_review_paths()
+
+    print("\n[6] 在校期间长期工作（P06）")
+    data = kbmod.load()
+    base = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2020-2024",
+                           "mode": "全日制"}],
+            "collection": {"complete": True, "needs_review": False},
+            "basic": {"age": 24, "education_mode": "全日制"}, "gap_months": 0,
+            "total_work_months": 30}
+    overlap = kbmod.evaluate({**base, "work": [{"company": "甲", "title": "客服",
+                                                "period": "2022.03-2023.06",
+                                                "descriptions": ["接待客户"]}]}, data)
+    check("重合 15 个月 -> 不合适", overlap["verdict"] == "不合适", overlap["verdict"])
+    check("命中 P06", any(f["rule"] == "P06" for f in overlap["failures"]),
+          str([f["rule"] for f in overlap["failures"]]))
+
+    intern = kbmod.evaluate({**base, "work": [{"company": "甲", "title": "客服实习",
+                                               "period": "2022.03-2023.06",
+                                               "descriptions": ["实习"]}]}, data)
+    check("标了实习 -> 不判死", intern["verdict"] != "不合适", intern["verdict"])
+
+    short = kbmod.evaluate({**base, "work": [{"company": "甲", "title": "客服",
+                                              "period": "2024.01-2024.06",
+                                              "descriptions": ["接待客户"]}]}, data)
+    check("重合 5 个月 -> 不判死", short["verdict"] != "不合适", short["verdict"])
+
+    print("\n[7] 姓名不影响判定")
+    nameless = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2020-2024",
+                               "mode": "全日制"}],
+                "work": [{"company": "甲", "title": "客服", "period": "2024.08-2025.06",
+                          "descriptions": ["接待客户"]}],
+                "collection": {"complete": True, "needs_review": False},
+                "basic": {"age": 24, "education_mode": "全日制"}, "gap_months": 0,
+                "total_work_months": 10}
+    no_name = kbmod.evaluate(nameless, data)
+    check("无姓名不影响结论", no_name["verdict"] != "不合适", no_name["verdict"])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 

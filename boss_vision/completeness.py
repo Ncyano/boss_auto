@@ -41,8 +41,9 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
     missing: list[str] = []
     nice: list[str] = []
 
+    # 姓名不影响合适/不合适的判断，只作为"建议补全"（便于人工找人对号）
     if _blank(resume.get("name")):
-        missing.append("姓名")
+        nice.append("姓名")
 
     education = resume.get("education") or []
     work = resume.get("work") or []

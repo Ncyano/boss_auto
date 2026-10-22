@@ -419,9 +419,12 @@ def resume_from_row(row: dict) -> dict:
         company = (row.get(f"第{i}家公司") or "").strip()
         title = (row.get(f"第{i}家职位") or "").strip()
         period = (row.get(f"第{i}家起止") or "").strip()
+        duty = (row.get(f"第{i}家工作内容") or "").strip()
         if company or period:
             work.append({"company": company, "title": title, "period": period,
-                         "descriptions": []})
+                         "descriptions": [duty] if duty else []})
+    # 若有整段经历全文，也一并带上（实习标记可能写在职责里）
+    full = (row.get("工作经历全文") or "").strip()
 
     reasons = [x for x in (row.get("复核原因") or "").split("；") if x]
     return {
