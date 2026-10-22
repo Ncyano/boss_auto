@@ -163,6 +163,19 @@ def main() -> int:
                 "total_work_months": 10}
     no_name = kbmod.evaluate(nameless, data)
     check("无姓名不影响结论", no_name["verdict"] != "不合适", no_name["verdict"])
+
+    ta = kbmod.evaluate({**base, "work": [{"company": "艺术机构", "title": "助教",
+                                           "period": "2022.03-2023.09",
+                                           "descriptions": ["协助授课"]}]}, data)
+    check("助教不豁免 -> 不合适", ta["verdict"] == "不合适", ta["verdict"])
+    tutor = kbmod.evaluate({**base, "work": [{"company": "培训机构", "title": "家教",
+                                              "period": "2022.03-2023.09",
+                                              "descriptions": ["辅导功课"]}]}, data)
+    check("家教不豁免 -> 不合适", tutor["verdict"] == "不合适", tutor["verdict"])
+    intern2 = kbmod.evaluate({**base, "work": [{"company": "甲公司", "title": "客服",
+                                                "period": "2022.03-2023.09",
+                                                "descriptions": ["兼职客服，每周20小时"]}]}, data)
+    check("职责写兼职 -> 豁免", intern2["verdict"] != "不合适", intern2["verdict"])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
