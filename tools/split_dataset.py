@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "data" / "运营助理-清洗.csv"
+SRC = ROOT / "data" / "运营助理-数据集.csv"
 OUT_DIR = ROOT / "data" / "dataset"
 
 TRAIN_RATIO, VAL_RATIO, TEST_RATIO = 0.70, 0.15, 0.15
@@ -31,7 +31,8 @@ def person_key(row: dict) -> str:
     """同一候选人判重：姓名 + 学校（姓名缺失时用学校+最近公司）。"""
     name = re.sub(r"\s", "", row.get("姓名") or "")
     school = re.sub(r"\s", "", row.get("学校") or "")
-    company = re.sub(r"\s", "", row.get("最近一段公司") or "")
+    company = re.sub(r"\s", "", row.get("最近一段公司")
+                     or row.get("第1家公司") or "")
     return f"{name}|{school}" if name else f"无名|{school}|{company}"
 
 
