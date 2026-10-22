@@ -66,8 +66,8 @@ class App:
         # 滚动屏数 / 刷新次数不再暴露在界面，用固定默认值（12 屏、3 次）
         self.var_scroll = tk.IntVar(value=12)
         self.var_refresh = tk.IntVar(value=3)
-        self.var_gap_min = tk.DoubleVar(value=15.0)
-        self.var_gap_max = tk.DoubleVar(value=25.0)
+        self.var_gap_min = tk.DoubleVar(value=10.0)
+        self.var_gap_max = tk.DoubleVar(value=18.0)
         self.var_icon = tk.BooleanVar(value=True)
         self.var_dry = tk.BooleanVar(value=False)
         self.var_refresh_page = tk.BooleanVar(value=False)   # 默认：不刷新，只往下滚

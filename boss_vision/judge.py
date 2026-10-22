@@ -29,7 +29,7 @@ DEFAULT_CONFIG = {
     "api_key_env": "DEEPSEEK_API_KEY",
     "api_key": "",
     "temperature": 0,
-    "max_tokens": 2000,
+    "max_tokens": 800,
     "timeout": 120,
     "retries": 3,
     "thinking": "disabled",
@@ -71,13 +71,14 @@ SYSTEM_PROMPT = """你是运营助理岗位的简历证据抽取与匹配助手�
 4. 不得使用年龄、性别、姓名、头像、推测的性格作为依据。
 5. 不得自行设置权重、阈值或概率，不输出置信度分数。
 6. 只输出 JSON，不要 markdown 代码块，不要解释。
+7. 尽量简短：每条证据引用不超过 30 字，reason 可留空。
 
 输出格式：
 {
   "rule_results": [
     {"rule_id": "W01", "status": "满足|部分满足|明确不满足|无法判断",
-     "evidence": [{"quote": "原文片段", "experience_index": 1}],
-     "reason": "一句话说明"}
+     "evidence": [{"quote": "原文片段（≤30字）", "experience_index": 1}],
+     "reason": ""}
   ],
   "missing_information": ["缺少什么信息"],
   "final_recommendation": "建议合适|不合适",
@@ -106,7 +107,7 @@ def _post(cfg: dict, messages: list[dict], key: str) -> dict:
     payload = {
         "model": cfg["model"],
         "temperature": cfg.get("temperature", 0),
-        "max_tokens": cfg.get("max_tokens", 2000),
+        "max_tokens": cfg.get("max_tokens", 800),
         "response_format": {"type": "json_object"},
         # deepseek 默认开启思考模式；分类任务不需要思维链，关掉更快更稳（且思考模式下 temperature 不生效）
         "thinking": {"type": str(cfg.get("thinking", "disabled"))},

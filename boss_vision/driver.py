@@ -606,7 +606,8 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         except Exception:
                             mode = "ocr"
                     if mode == "vlm":
-                        rr = resume_reader.read_resume_vlm(rect, p2["wides"][0], log=print)
+                        rr = resume_reader.read_resume_vlm(rect, p2["wides"][0], log=print,
+                                                           name_hint=card_name)
                     else:
                         rr = resume_reader.read_resume(rect, p2["wides"][0], log=print)
 
@@ -633,7 +634,8 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         try:
                             if mode == "vlm":
                                 rr2 = resume_reader.read_resume_vlm(rect, p2["wides"][0],
-                                                                    log=print)
+                                                                    log=print,
+                                                                    name_hint=card_name)
                             else:
                                 rr2 = resume_reader.read_resume(rect, p2["wides"][0], log=print)
                             if _richness(rr2) > _richness(best):
@@ -742,29 +744,29 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             except Exception as exc:
                 print(f"     [warn] 去重检查失败：{exc}")
 
-            # 逐条判定：学历硬规则通过后立即做"合适/不合适"二分类（不点击打招呼）
-            try:
-                import judge_inline
-                verdict = judge_inline.judge_record(record)
-                record["judgment"] = verdict
-                status = verdict.get("status") or "正常"
-                flag = "" if status == "正常" else f"，{status}"
-                print(f"     ➜ 判定：{verdict['verdict']}"
-                      f"（{verdict['stage']}层{flag}｜{verdict['reason'][:60]}）")
-            except Exception as exc:
-                record["judgment"] = {"verdict": "不合适", "status": "调用失败",
-                                      "reason": f"判定异常：{exc}"[:120], "stage": "error"}
-                print(f"     [warn] 判定失败：{exc}")
+            # 判定放到后台线程：与"关弹窗 + 候选人间隔"并行，串行等待变成重叠
+            judgment_box: dict = {}
 
-            results.append(record)
-            last_record_at[:] = [time.time()]
-            dump_results(with_csv=False)   # 增量只写 json，csv 在结束时统一生成
+            def _judge_async(rec: dict, box: dict) -> None:
+                try:
+                    import judge_inline
+                    box["value"] = judge_inline.judge_record(rec)
+                except Exception as exc:
+                    box["value"] = {"verdict": "不合适", "status": "调用失败",
+                                    "reason": f"判定异常：{exc}"[:120], "stage": "error"}
+
+            import threading
+            worker = threading.Thread(target=_judge_async, args=(record, judgment_box),
+                                      daemon=True)
+            worker.start()
 
             if opened and not close_modal(
                 rect, (ox, oy), plan(winenv.grab_window(rect), icon_check)["wides"],
                 icon_check=icon_check,
             ):
                 print("  关不掉弹窗，停止。")
+                worker.join(timeout=30)
+                record["judgment"] = judgment_box.get("value") or {}
                 (OUT / f"{stamps}-results.json").write_text(
                     json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
                 return 3
@@ -776,11 +778,25 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             PROGRESS.update({"handled": handled, "valid": valid})
             print(f"     进度：有效 {valid}/{limit}（尝试 {handled} 次）")
 
-            # 候选人之间的随机间隔：从上一个候选人动作全部结束开始计时。
-            # 打招呼实装后，greet 会插在上面的动作链里，间隔起点自然变成"打完招呼之后"。
+            # 候选人之间的随机间隔：判定线程在这段时间里跑完，不额外占用时间
+            gap = 0.0
             if not reached():
                 gap = wait_between_candidates(min_gap, max_gap)
-                results[-1]["gap_before_next"] = round(gap, 1)
+
+            worker.join(timeout=60)          # 判定最迟 60 秒返回
+            verdict = judgment_box.get("value") or {
+                "verdict": "不合适", "status": "调用失败",
+                "reason": "判定超时（60 秒未返回）", "stage": "error"}
+            record["judgment"] = verdict
+            status = verdict.get("status") or "正常"
+            flag = "" if status == "正常" else f"，{status}"
+            print(f"     ➜ 判定：{verdict['verdict']}"
+                  f"（{verdict['stage']}层{flag}｜{verdict['reason'][:60]}）")
+
+            record["gap_before_next"] = round(gap, 1)
+            results.append(record)
+            last_record_at[:] = [time.time()]
+            dump_results(with_csv=False)   # 增量只写 json，csv 在结束时统一生成
 
         # 处理完一个就回到循环顶部重新截图、重新判定（不再沿用旧坐标）
         continue
