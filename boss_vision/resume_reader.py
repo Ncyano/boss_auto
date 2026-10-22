@@ -558,6 +558,36 @@ def merge_sidebar(work: list[dict], education: list[dict], sidebar: list[dict]) 
             "truncated": truncated, "notes": notes, "conflicts": conflict_sink}
 
 
+def card_name(img, card, log=print) -> str:
+    """从列表卡片上读姓名（点开弹窗之前）。
+
+    弹窗可能一打开就已经滚动过、看不到姓名；卡片左上角的名字是稳定可见的，
+    用它作为姓名的主要来源，弹窗里的姓名只作交叉校验。
+    """
+    try:
+        engine = vision.load_ocr()
+        if engine is None:
+            return ""
+        region = vision.Rect(card.x + 70, card.y + 8, min(320, card.w - 80), 52)
+        items = vision.ocr_crop(engine, img, region)
+        cand = guess_name(items) or guess_name_from_text("\n".join(i["text"] for i in items))
+        try:
+            import vlm as _v
+            if not _v.is_plausible_name(cand):
+                # 退一步：取区域里第一段像姓名的文本
+                for it in items:
+                    cleaned = _v.clean_name(it["text"])
+                    if _v.is_plausible_name(cleaned):
+                        return cleaned
+                return ""
+        except Exception:
+            pass
+        return cand
+    except Exception as exc:
+        log(f"  [warn] 卡片姓名读取失败：{exc}")
+        return ""
+
+
 def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     settle: float = 0.6, scroll_clicks: int = -5,
                     cfg: dict | None = None) -> ReadResult:
@@ -639,6 +669,21 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             panel_name = _name_from_vlm(raw)
             # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
             zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
+            # 读不到像样的姓名 -> 弹窗可能还没回到顶部，强行再回顶一次重读
+            if not zoom_name:
+                log("  姓名区没拍到（可能没回顶），再滚一次顶部重读")
+                try:
+                    tx = ox + band.x + band.w // 2
+                    ty = oy + band.y + band.h // 2
+                    winenv.scroll(tx, ty, 8)
+                    time.sleep(0.8)
+                    img = winenv.grab_window(rect)
+                    band = panel_band(img, wide)
+                    zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
+                    if zoom_name:
+                        log(f"  重读成功: {zoom_name}")
+                except Exception as exc:
+                    log(f"  [warn] 重新回顶失败：{exc}")
             res.name = zoom_name or panel_name
             candidates = [v for v in dict.fromkeys(([panel_name] if panel_name else []) + list(votes)) if v]
             res.name_candidates = candidates
@@ -756,8 +801,12 @@ def _name_by_ocr(img, band, log=print) -> str:
             return ""
         region = vision.Rect(band.x, band.y, min(360, band.w), min(70, band.h))
         items = vision.ocr_crop(engine, img, region)
-        return guess_name(items) or guess_name_from_text(
-            "\n".join(it["text"] for it in items))
+        cand = guess_name(items) or guess_name_from_text("\n".join(it["text"] for it in items))
+        try:
+            import vlm as _v
+            return cand if _v.is_plausible_name(cand) else ""
+        except Exception:
+            return cand
     except Exception as exc:
         log(f"  [warn] 姓名 OCR 兜底失败：{exc}")
         return ""

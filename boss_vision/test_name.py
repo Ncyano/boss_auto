@@ -48,6 +48,12 @@ def main() -> int:
         got = vlm.clean_name(raw)
         check(f"{raw!r} -> {want!r}", got == want, f"得到 {got!r}")
 
+    print("\n[1b] 姓名合法性校验（拦垃圾）")
+    for bad in ["/UR,±>", "/UR,>", "丨 | 离校", "/UR,主>", "本科", "空字符串", "张"]:
+        check(f"{bad!r} 不算姓名", not vlm.is_plausible_name(bad))
+    for good in ["吴女士", "郑颖", "陈晶晶", "云中客", "mustard", "程女士"]:
+        check(f"{good!r} 是姓名", vlm.is_plausible_name(good))
+
     print("\n[2] 真实截图：面板里的姓名")
     panel = FIX / "panel-zhangjinmin.png"
     if panel.exists():

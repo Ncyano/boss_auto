@@ -347,6 +347,28 @@ STATUS_PATTERNS = re.compile(
 REFUSALS = ("空字符串", "空", "无", "看不清", "无法识别", "none", "null", "n/a")
 
 
+# 姓名合法性：2~6 个汉字，或 2~20 个英文字母（BOSS 上有英文昵称）
+HANZI = re.compile(r"^[\u4e00-\u9fa5]{2,6}$")
+LATIN = re.compile(r"^[A-Za-z][A-Za-z .'-]{1,19}$")
+NON_NAME_WORDS = {
+    "在线", "离职", "在职", "应届", "本科", "大专", "硕士", "博士", "中专", "高中",
+    "离校", "到岗", "活跃", "暂无", "空字符串", "无", "看不清", "姓名", "候选人",
+}
+
+
+def is_plausible_name(text: str) -> bool:
+    """判断是不是一个像样的姓名。
+
+    实测会把页面上的杂字、图标文字当成姓名（/UR,±>、丨 | 离校、主> 等），
+    这些必须拒掉，宁可标"姓名未识别"也不写脏数据。
+    """
+    t = (text or "").strip()
+    if not t or t in NON_NAME_WORDS:
+        return False
+    if HANZI.match(t) or LATIN.match(t):
+        return True
+    return False
+
 def clean_name(text: str) -> str:
     """清掉模型/OCR 夹带的活跃状态、年龄、学历等字样。"""
     low = (text or "").strip().strip('"\'').lower()
@@ -356,7 +378,8 @@ def clean_name(text: str) -> str:
     t = re.sub(r"[\s　]+", "", t)
     t = STATUS_PATTERNS.sub("", t)
     t = re.sub(r"^[·|\-]+|[·|\-]+$", "", t)
-    return t[:12]
+    t = t[:12]
+    return t if is_plausible_name(t) else ""
 
 
 def _ask_name(crop, cfg: dict, scale: float = 2.5) -> str:
