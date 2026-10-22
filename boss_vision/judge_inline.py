@@ -58,15 +58,17 @@ def judge_record(rec: dict, rules: dict | None = None) -> dict:
     try:
         out = screening.screen_row(row, rules)
     except Exception as exc:
-        return {"verdict": "不合适", "reason": f"判定失败：{exc}", "edu": "—",
-                "work": "—", "stage": "error"}
+        return {"verdict": "不合适", "status": "调用失败", "reason": f"判定失败：{exc}",
+                "edu": "—", "work": "—", "stage": "error"}
 
     verdict = out.get("最终结论") or "不合适"
+    status = out.get("处理状态") or "正常"
     reason = (out.get("原因") or "").strip()
     edu = out.get("教育结论") or "—"
     work = out.get("经历结论") or "—"
     stage = "学历" if work in ("—", "", None) else "工作经历"
-    return {"verdict": verdict, "reason": reason, "edu": edu, "work": work, "stage": stage}
+    return {"verdict": verdict, "status": status, "reason": reason,
+            "edu": edu, "work": work, "stage": stage}
 
 
 def self_test() -> int:

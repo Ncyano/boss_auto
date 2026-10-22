@@ -306,6 +306,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
     results: list[dict] = []
     _seen_people: set = set()          # 已采集过的候选人指纹（去重）
     duplicate_skipped = 0              # 因重复被跳过的次数
+    modal_open = [False]               # 当前是否有简历弹窗开着（统一清理用）
     handled = 0
     valid = 0                    # 真正打开并读到内容的次数（"有效人次"）
     PROGRESS.update({"handled": 0, "valid": 0, "target": limit, "state": "running"})
@@ -408,6 +409,21 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
         return (valid if count_valid else handled) >= limit
 
     while not reached() and handled < max_attempts and not STOP:
+        # 统一清理：上一轮若有分支没关弹窗（重复/异常），这里先补关一次，避免卡在简历页
+        if modal_open[0]:
+            print("  上一轮弹窗未关闭，先关闭再继续")
+            try:
+                if close_modal(rect, (ox, oy), plan(winenv.grab_window(rect), icon_check)["wides"],
+                               icon_check=icon_check):
+                    modal_open[0] = False
+                    print("     已回到列表")
+                else:
+                    print("     关不掉弹窗，停止。")
+                    return 3
+            except Exception as exc:
+                print(f"     [warn] 关闭失败：{exc}")
+                return 3
+
         img = winenv.grab_window(rect)
         p = plan(img, icon_check, block_text_scan)
         print(f"\n[state={p['state']}] 卡片 {len(p['cards'])} 个")
@@ -553,6 +569,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 p2 = plan(winenv.grab_window(rect), icon_check)
                 if p2["state"] == "resume_modal":
                     opened = True
+                    modal_open[0] = True
                     break
                 time.sleep(0.5)
             print(f"     弹窗已打开: {opened}")
@@ -680,10 +697,18 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 fingerprint = _fp(record)
                 if any(fingerprint) and fingerprint[0]:
                     if fingerprint in _seen_people:
-                        # 同一人：不记录、不判定，直接跳过（结果里不留空行）
+                        # 同一人：先关掉弹窗（否则下一轮会卡在简历页），再跳过
                         print(f"     ↺ {record.get('name')} 与之前重复"
-                              f"（{fingerprint[1] or '无学校'}），跳过")
+                              f"（{fingerprint[1] or '无学校'}），关闭弹窗后跳过")
                         duplicate_skipped += 1
+                        try:
+                            if close_modal(rect, (ox, oy), p["wides"], icon_check=icon_check):
+                                modal_open[0] = False
+                            else:
+                                print("     关不掉弹窗，停止。")
+                                return 3
+                        except Exception as exc:
+                            print(f"     [warn] 关闭弹窗失败：{exc}")
                         continue
                     _seen_people.add(fingerprint)
             except Exception as exc:
@@ -694,11 +719,13 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 import judge_inline
                 verdict = judge_inline.judge_record(record)
                 record["judgment"] = verdict
+                status = verdict.get("status") or "正常"
+                flag = "" if status == "正常" else f"，{status}"
                 print(f"     ➜ 判定：{verdict['verdict']}"
-                      f"（{verdict['stage']}层｜{verdict['reason'][:60]}）")
+                      f"（{verdict['stage']}层{flag}｜{verdict['reason'][:60]}）")
             except Exception as exc:
-                record["judgment"] = {"verdict": "不合适", "reason": f"判定异常：{exc}"[:120],
-                                      "stage": "error"}
+                record["judgment"] = {"verdict": "不合适", "status": "调用失败",
+                                      "reason": f"判定异常：{exc}"[:120], "stage": "error"}
                 print(f"     [warn] 判定失败：{exc}")
 
             results.append(record)
@@ -713,6 +740,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                 (OUT / f"{stamps}-results.json").write_text(
                     json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
                 return 3
+            modal_open[0] = False
             print("     已回到列表")
             handled += 1
             if opened:

@@ -156,7 +156,9 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
             try:
                 hit = schools_lookup(school)
                 if not hit.get("listed"):
-                    reviews.append(f"校名 {school} 未命中指定名单，需人工核对（E03）")
+                    failures.append({"rule": "E03",
+                                     "reason": f"校名 {school} 不在教育部名单",
+                                     "evidence": f"学校：{school}"})
             except Exception:
                 pass
 

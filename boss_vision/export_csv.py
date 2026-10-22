@@ -112,6 +112,7 @@ def row_of(rec: dict, batch: str | None = None) -> dict[str, object]:
         "需复核": "是" if rec.get("needs_review") else "否",
         "复核原因": rec.get("review_reason", ""),
         "判定结论": (rec.get("judgment") or {}).get("verdict", ""),
+        "处理状态": (rec.get("judgment") or {}).get("status", ""),
         "判定依据": (rec.get("judgment") or {}).get("reason", ""),
         "判定环节": (rec.get("judgment") or {}).get("stage", ""),
         "间隔(秒)": rec.get("gap_before_next", ""),
@@ -209,33 +210,39 @@ def daily_path(runs_dir: Path, day: str | None = None) -> Path:
 
 
 def dedupe_key(row: dict) -> tuple:
-    """同一个人（姓名 + 第一家公司 + 起止）视为同一条，后采的覆盖先采的。"""
+    """同一个人的指纹：姓名 + 学校 + 第一家公司 + 起止。
+
+    只按姓名会在"同名不同人"时误删，所以带上学校与首段经历；
+    四项都相同才认为是重复。
+    """
     return (str(row.get("姓名", "")).strip(),
+            str(row.get("学校", "")).strip(),
             str(row.get("第1家公司", "")).strip(),
-            str(row.get("第1家起止", "")).strip())
+            str(row.get("第1家起止", "")).replace(" ", ""))
 
 
 def dedupe_rows(rows: list[dict]) -> list[dict]:
-    """同一人只留一条（同名覆盖，保留后到的）。
+    """同一个人只留一条（组合键相同才合并，同名不同人不合并）。
 
-    driver 采集时已按指纹去重，这里再兜一层：万一指纹没命中（学校/公司读到差异），
-    同名记录也不会重复出现在汇总表里。
+    组合键 = 姓名 + 学校 + 第一家公司 + 起止；姓名缺失的直接保留。
     """
     out: list[dict] = []
-    index: dict[str, int] = {}
+    index: dict[tuple, int] = {}
     for row in rows:
         name = str(row.get("姓名", "") or "").strip()
         if not name:
             out.append(row)
             continue
-        if name in index:
-            out[index[name]] = row
+        key = dedupe_key(row)
+        if key in index:
+            out[index[key]] = row          # 后到的覆盖先到的
         else:
-            index[name] = len(out)
+            index[key] = len(out)
             out.append(row)
     for i, row in enumerate(out, 1):
         row["序号"] = i
     return out
+
 
 def merge_into_daily(runs_dir: Path, new_rows: list[dict], day: str | None = None) -> Path | None:
     """把本次采集的结果并进「当天那张表」，没有就新建。"""
@@ -251,28 +258,16 @@ def merge_into_daily(runs_dir: Path, new_rows: list[dict], day: str | None = Non
             print(f"[warn] 读取 {path.name} 失败，将重建：{exc}")
             existing = []
 
+    # 组合键去重：姓名+学校+首家公司+起止，四项全同才算同一人（同名不同人不合并）
     merged: dict[tuple, dict] = {}
+    anonymous: list[dict] = []
     for row in existing + new_rows:
-        merged[dedupe_key(row)] = row
-
-    # 同一个人（同名）只保留一条：解析规则升级后可能导致"首家公司/起止"变化而变成新键
-    by_name: dict[str, dict] = {}
-    collapsed: list[dict] = []
-    for row in merged.values():
-        name = str(row.get("姓名", "")).strip()
-        if not name:
-            collapsed.append(row)
+        if not str(row.get("姓名", "")).strip():
+            anonymous.append(row)          # 没姓名的不参与合并，保留
             continue
-        old_row = by_name.get(name)
-        if old_row is None:
-            by_name[name] = row
-            collapsed.append(row)
-            continue
-        collapsed[collapsed.index(old_row)] = row          # 新采/新解析的结果优先覆盖旧的
-        by_name[name] = row
+        merged[dedupe_key(row)] = row      # 后采的覆盖先采的
 
-    # 当天表里的序号必须连续（1..N）：每轮采集的 index 都从 1 开始，合并后要重排
-    ordered = collapsed
+    ordered = list(merged.values()) + anonymous
     for i, row in enumerate(ordered, 1):
         row["序号"] = i
 

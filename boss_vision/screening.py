@@ -391,6 +391,17 @@ def _total_work_months(work: list[dict]) -> int | None:
             merged.append([s0, e0])
     return sum(e0 - s0 for s0, e0 in merged)
 
+def work_count_of(row: dict) -> int:
+    """工作经历条数：优先用字段，字段为空时按第N家槽位数推断。"""
+    raw = str(row.get("工作经历条数", "") or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    slots = 0
+    for i in range(1, 11):
+        if (row.get(f"第{i}家公司") or "").strip() or (row.get(f"第{i}家起止") or "").strip():
+            slots += 1
+    return slots
+
 def resume_from_row(row: dict) -> dict:
     """把一行 CSV 还原成 kb.evaluate 需要的简历结构。"""
     education = []
@@ -418,7 +429,7 @@ def resume_from_row(row: dict) -> dict:
         "work": work,
         "collection": {
             "complete": (row.get("采集完成") or "") == "是",
-            "work_count": row.get("工作经历条数"),
+            "work_count": work_count_of(row),
             "needs_review": (row.get("需复核") or "") == "是",
             "conflicts": [1] * int(row.get("冲突数") or 0),
             "review_reason": reasons,
@@ -449,6 +460,14 @@ def evaluate_kb(row: dict, kb_data: dict | None = None) -> dict:
                 "education_status": "未知", "education_evidence": ""}
 
 
+def _status_of_kb(kb_out: dict) -> str:
+    """区分"业务判定"与"技术原因"：只有采集/字段缺失算无法核实。"""
+    rules_hit = {f.get("rule") for f in (kb_out.get("failures") or [])}
+    if "Q01" in rules_hit:
+        return "无法核实"
+    return "正常"
+
+
 def _judge_work(row: dict) -> dict | None:
     """调用 DeepSeek 判工作经历；没有 key、没文本或失败时返回 None。"""
     try:
@@ -472,12 +491,14 @@ def _judge_work(row: dict) -> dict | None:
         ok = res["recommendation"] == "建议合适"
         return {
             "最终结论": PASS if ok else REJECT,
+            "处理状态": "正常",
             "原因": res.get("decision_basis", "")[:120],
             "经历结论": "匹配" if ok else "不匹配",
             "评分": "",
         }
     except Exception as exc:
-        return {"最终结论": REJECT, "原因": f"判断模型调用失败：{exc}"[:120],
+        return {"最终结论": REJECT, "处理状态": "调用失败",
+                "原因": f"判断模型调用失败：{exc}"[:120],
                 "经历结论": "—", "评分": ""}
 
 
@@ -497,6 +518,7 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             "学校匹配": row.get("学校", ""),
             "经历结论": "—",
             "最终结论": REJECT,
+            "处理状态": "采集不完整",
             "原因": f"采集不完整：{gate['collect_reason']}",
         }
 
@@ -514,6 +536,7 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             "学校匹配": row.get("学校", ""),
             "经历结论": "—",
             "最终结论": REJECT,
+            "处理状态": _status_of_kb(kb_out),
             "原因": kb_out["reason"],
         }
     edu = screen_education(row, rules)
@@ -535,6 +558,7 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
     if edu["edu_result"] == REVIEW:
         # 二元口径：学历字段核实不了也算不合适（原因保留，便于补采）
         out.update({"经历结论": "—", "最终结论": REJECT,
+                    "处理状态": "无法核实",
                     "原因": f"无法核实学历：{edu['edu_reason']}"})
         return out
 
@@ -555,6 +579,7 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             out["原因"] = f"{edu['edu_reason']}；{decided['原因']}"
         else:
             out["最终结论"] = REJECT
+            out["处理状态"] = "调用失败"
             out["原因"] = "未接入判断模型，无法确认工作经历匹配（默认按不合适）"
     else:
         out["最终结论"] = work["work_result"]

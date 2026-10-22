@@ -57,7 +57,10 @@ def load_rows(name: str) -> list[dict]:
 
 def screen_row_of(row: dict) -> dict:
     out = {k: row.get(k, "") for k in ("序号", "姓名", "学校", "学历", "专业",
-                                       "学历性质", "年龄", "求职状态", "工作经历条数")}
+                                       "学历性质", "年龄", "求职状态")}
+    out["工作经历条数"] = row.get("工作条数") or row.get("工作经历条数") or ""
+    # 职责原文：模型判定的核心输入，必须带上
+    out["工作经历全文"] = row.get("工作经历全文", "")
     for i in range(1, SLOTS + 1):
         for suffix in ("公司", "职位", "起止"):
             key = f"第{i}家{suffix}"
@@ -70,63 +73,69 @@ def screen_row_of(row: dict) -> dict:
 
 def run_split(name: str, rows: list[dict], kb: dict, cfg: dict, shots: list[dict],
               log_each: bool = True) -> dict:
+    """用**与线上完全相同的入口** screen_row 判定（含采集质量、学历、门槛、模型）。
+
+    技术原因（采集不完整 / 无法核实 / 调用失败）单独计数，不计入准确率，
+    避免把故障样本混进负样本。
+    """
+    rules = screening.load_rules()
     detail = []
-    hard_reject = hard_wrong = 0
-    tp = fp = tn = fn = unsure = failed = 0
+    tp = fp = tn = fn = 0
     tokens = 0
+    status_count: dict[str, int] = {}
+    skipped = []
 
     for i, row in enumerate(rows, 1):
         actual = (row.get("人事结论") or "").strip()
         label = row.get("姓名") or "(无名)"
-        kb_out = screening.evaluate_kb(screen_row_of(row), kb)
 
-        if kb_out["verdict"] == "不合适":
-            hard_reject += 1
-            pred = "不合适"
-            reason = "硬规则：" + "；".join(f["reason"] for f in kb_out["failures"])[:70]
-            if actual != "不合适":
-                hard_wrong += 1
-        else:
-            try:
-                res = judge.judge(work_text(row), kb, cfg, shots=shots)
-                tokens += int((res.get("usage") or {}).get("total_tokens") or 0)
-                pred = "合适" if res["recommendation"] == "建议合适" else "不合适"
-                reason = res["decision_basis"][:70]
-            except Exception as exc:
-                failed += 1
-                pred, reason = "调用失败", str(exc)[:70]
+        srow = screen_row_of(row)
+        try:
+            out = screening.screen_row(srow, rules)
+        except Exception as exc:
+            out = {"最终结论": "不合适", "处理状态": "调用失败", "原因": str(exc)[:80]}
 
-        if pred == "不合适" and actual == "不合适":
+        verdict = out.get("最终结论") or "不合适"
+        status = out.get("处理状态") or "正常"
+        reason = (out.get("原因") or "")[:70]
+        stage = out.get("经历结论") or "—"
+        status_count[status] = status_count.get(status, 0) + 1
+
+        if status != "正常":
+            verdict = None            # 技术原因：不参与准确率
+            skipped.append({"姓名": row.get("姓名"), "真实": actual, "状态": status,
+                            "原因": reason})
+
+        if verdict == "不合适" and actual == "不合适":
             tp += 1
-        elif pred == "不合适" and actual == "合适":
+        elif verdict == "不合适" and actual == "合适":
             fp += 1
-        elif pred == "合适" and actual == "合适":
+        elif verdict == "合适" and actual == "合适":
             tn += 1
-        elif pred == "合适" and actual == "不合适":
+        elif verdict == "合适" and actual == "不合适":
             fn += 1
-        elif pred == "调用失败":
-            unsure += 1
 
-        mark = "✓" if pred == actual else ("?" if pred == "调用失败" else "✗")
+        mark = ("?" if verdict is None else ("✓" if verdict == actual else "✗"))
         if log_each:
+            shown = verdict or "跳过"
+            tail = "" if status == "正常" else f"｜{status}"
             print(f"    [{i}/{len(rows)}] {mark} {label:<8} 真实={actual or '—':<4} "
-                  f"预测={pred:<5} {reason[:36]}")
-        detail.append({"姓名": row.get("姓名"), "真实": actual, "预测": pred,
-                       "理由": reason, "硬规则": kb_out["verdict"] or "通过"})
+                  f"判定={shown:<4}{tail} {reason[:34]}")
+        detail.append({"姓名": row.get("姓名"), "真实": actual,
+                       "预测": verdict or "跳过", "处理状态": status, "理由": reason})
 
     judged = tp + fp + tn + fn
     m = {
-        "n": len(rows), "judged": judged, "unsure": unsure, "failed": failed,
-        "hard_reject": hard_reject, "hard_wrong": hard_wrong,
+        "n": len(rows), "judged": judged,
+        "skipped": len(rows) - judged,
         "tp": tp, "fp": fp, "tn": tn, "fn": fn, "tokens": tokens,
         "precision": round(tp / (tp + fp), 3) if tp + fp else None,
         "recall": round(tp / (tp + fn), 3) if tp + fn else None,
         "accuracy": round((tp + tn) / judged, 3) if judged else None,
         "coverage": round(judged / len(rows), 3) if rows else None,
-        "hard_precision": (round((hard_reject - hard_wrong) / hard_reject, 3)
-                           if hard_reject else None),
+        "status": status_count,
     }
-    return {"name": name, "metrics": m, "detail": detail}
+    return {"name": name, "metrics": m, "detail": detail, "skipped": skipped}
 
 
 def build_shots(n: int) -> list[dict]:
@@ -167,8 +176,8 @@ def main(argv: list[str] | None = None) -> int:
         res["shots"] = len(shots)
         val_results.append(res)
         m = res["metrics"]
-        print(f"    硬规则判死 {m['hard_reject']}（错 {m['hard_wrong']}）  模型判 {m['judged']}  "
-              f"准确率 {m['accuracy']}  精确率 {m['precision']}  覆盖率 {m['coverage']}\n")
+        print(f"    判定 {m['judged']}/{m['n']}  准确率 {m['accuracy']}  "
+              f"精确率 {m['precision']}  召回率 {m['recall']}  状态 {m['status']}\n")
 
     def key(r):
         m = r["metrics"]
@@ -206,27 +215,26 @@ def main(argv: list[str] | None = None) -> int:
         f"- 切分：train {len(train_rows)} / val {len(val_rows)} / test {len(test_rows)}"
         "（70/15/15，按人分组防泄漏）",
         "", "## 验证集：示例规模选择", "",
-        "| 示例数 | 硬规则判死 | 模型判 | 准确率 | 精确率 | 覆盖率 | token |",
+        "| 示例数 | 判定数 | 准确率 | 精确率 | 召回率 | 覆盖率 | 跳过(技术原因) |",
         "|---|---|---|---|---|---|---|",
     ]
     for r in val_results:
         m = r["metrics"]
-        lines.append(f"| {r['shots']} | {m['hard_reject']} | {m['judged']} | {m['accuracy']} | "
-                     f"{m['precision']} | {m['coverage']} | {m['tokens']} |")
+        lines.append(f"| {r['shots']} | {m['judged']} | {m['accuracy']} | {m['precision']} | "
+                     f"{m['recall']} | {m['coverage']} | {m['skipped']} |")
     lines += ["", f"选定 **{best['shots']} 条示例**。", "", "## 测试集（一次性）", "",
-              f"- 硬规则判死：{tm['hard_reject']} 条（其中与人事不一致 {tm['hard_wrong']}）",
-              f"- 模型判定：{tm['judged']} 条（待复核 {tm['unsure']} / 失败 {tm['failed']}）",
+              f"- 参与统计：{tm['judged']}/{tm['n']}（技术原因跳过 {tm['skipped']}）",
+              f"- 处理状态分布：{tm['status']}",
               f"- 准确率：{tm['accuracy']}　精确率：{tm['precision']}　召回率：{tm['recall']}",
               f"- 覆盖率：{tm['coverage']}",
               f"- 混淆：TP={tm['tp']} FP={tm['fp']} TN={tm['tn']} FN={tm['fn']}",
-              f"- token：{tm['tokens']}",
               "", "## 训练集（对照，看是否过拟合）", "",
               f"- 准确率 {trm['accuracy']}　精确率 {trm['precision']}　覆盖率 {trm['coverage']}",
               "", "## 测试集逐条", "", "| 姓名 | 真实 | 预测 | 路径 | 依据 |",
               "|---|---|---|---|---|"]
     for d in test_res["detail"]:
         lines.append(f"| {d.get('姓名') or '—'} | {d['真实']} | {d['预测']} | "
-                     f"{d['硬规则']} | {d['理由'][:40]} |")
+                     f"{d.get('处理状态', '')} | {d['理由'][:40]} |")
     REPORT_MD.write_text("\n".join(lines), encoding="utf-8")
 
     print(f"  测试集：准确率 {tm['accuracy']}  精确率 {tm['precision']}  "
