@@ -174,11 +174,42 @@ def test_dedupe() -> None:
     check("空姓名保留", any(r["姓名"] == "" for r in out))
 
 
+def test_retry_richness() -> None:
+    print("\n[5] 重读结果不能越读越少")
+    from types import SimpleNamespace
+
+    def richness(res) -> tuple:
+        work = res.work or []
+        edu = res.education or []
+        duties = sum(len(w.get("descriptions") or []) for w in work)
+        named = sum(1 for w in work if (w.get("company") or "").strip())
+        edu_ok = 1 if (edu and (edu[0].get("school") or "").strip()
+                       and (edu[0].get("degree") or "").strip()) else 0
+        return (named, duties, len(work), edu_ok, -len(res.missing or []))
+
+    full = SimpleNamespace(
+        work=[{"company": "甲", "descriptions": ["a", "b"]},
+              {"company": "乙", "descriptions": ["c"]},
+              {"company": "丙", "descriptions": ["d"]}],
+        education=[{"school": "厦门大学", "degree": "本科"}],
+        missing=["第3家起止"],
+    )
+    empty = SimpleNamespace(
+        work=[{"company": "甲", "descriptions": []}],
+        education=[{"school": "厦门大学", "degree": "本科"}],
+        missing=[],
+    )
+    check("读到更多经历的结果更好", richness(full) > richness(empty),
+          f"{richness(full)} vs {richness(empty)}")
+    check("缺失少但内容空 -> 不算更好", not richness(empty) > richness(full))
+
+
 def main() -> int:
     test_fragments()
     test_education_continue()
     test_name_dispute()
     test_dedupe()
+    test_retry_richness()
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 

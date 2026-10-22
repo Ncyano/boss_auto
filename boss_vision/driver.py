@@ -601,8 +601,21 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         rr = resume_reader.read_resume(rect, p2["wides"][0], log=print)
 
                     # 采集必须完整：缺字段就整段重读（回顶再读），最多 2 次
+                    # 注意：不能只看"缺失项更少"——读到的条目更少时缺失项也会变少，
+                    # 必须用"信息量"综合比较，避免把好结果覆盖成空结果。
+                    def _richness(res) -> tuple:
+                        work = getattr(res, "work", []) or []
+                        edu = getattr(res, "education", []) or []
+                        duties = sum(len(w.get("descriptions") or []) for w in work)
+                        named = sum(1 for w in work if (w.get("company") or "").strip())
+                        edu_ok = 1 if (edu and (edu[0].get("school") or "").strip()
+                                       and (edu[0].get("degree") or "").strip()) else 0
+                        return (named, duties, len(work), edu_ok,
+                                -len(getattr(res, "missing", []) or []))
+
+                    best = rr
                     for retry in range(2):
-                        missing = list(getattr(rr, "missing", []) or [])
+                        missing = list(getattr(best, "missing", []) or [])
                         if not missing:
                             break
                         print(f"     ⚠ 采集缺失：{'；'.join(missing[:4])}，"
@@ -613,13 +626,18 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                                                                     log=print)
                             else:
                                 rr2 = resume_reader.read_resume(rect, p2["wides"][0], log=print)
-                            if len(getattr(rr2, "missing", []) or []) < len(missing):
-                                rr = rr2
+                            if _richness(rr2) > _richness(best):
+                                print(f"     重读结果更好，采用"
+                                      f"（工作 {len(rr2.work)} 条 / 缺失 {len(rr2.missing)} 项）")
+                                best = rr2
                             else:
+                                print(f"     重读结果更差（工作 {len(rr2.work)} 条 / "
+                                      f"缺失 {len(rr2.missing)} 项），保留原结果")
                                 break
                         except Exception as exc:
                             print(f"     [warn] 重读失败：{exc}")
                             break
+                    rr = best
                     record.update({
                         "name": rr.name,
                         "reader": getattr(rr, "reader", "ocr"),

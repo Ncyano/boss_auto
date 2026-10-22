@@ -638,6 +638,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     campus: list[dict] = []
     usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "screens": 0}
     unattributed: list[list[str]] = []          # 找不到归属的职责片段
+    pending_fragments: list[dict] = []          # 暂存的跨屏片段（等有经历再挂）
     edu_pending = 0                              # 教育字段不全时的补采计数
     prev_frame = None
 
@@ -655,9 +656,12 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
 
         parts = vlm.normalize(raw["sections"])
         # 跨屏续行片段：归属到上一条经历（滚动后顶部露出的通常是上一段的尾巴）
-        for frag in parts.get("fragments") or []:
+        # 若当前还没有任何经历（第一屏常常是空的），先暂存，等后面的屏读到经历再挂
+        for frag in list(pending_fragments) + list(parts.get("fragments") or []):
+            if frag in pending_fragments:
+                pending_fragments.remove(frag)
             if not work:
-                unattributed.append(frag.get("descriptions") or [])
+                pending_fragments.append(frag)
                 continue
             target = work[-1]
             added = False
@@ -759,6 +763,19 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         winenv.scroll(tx, ty, scroll_clicks)
         time.sleep(settle)
         res.steps = step + 1
+
+    # 循环结束时还有暂存片段：有经历就挂到最后一条，否则算未归属
+    if pending_fragments:
+        if work:
+            for frag in pending_fragments:
+                for text in frag.get("descriptions") or []:
+                    if text and text not in work[-1].setdefault("descriptions", []):
+                        work[-1]["descriptions"].append(text)
+            log(f"  尾部片段 {len(pending_fragments)} 段已挂到最后一条经历")
+        else:
+            for frag in pending_fragments:
+                unattributed.append(frag.get("descriptions") or [])
+        pending_fragments.clear()
 
     # ---------- 定向补采：缺职责就放大当前屏重读 ----------
     try:
