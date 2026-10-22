@@ -24,7 +24,7 @@ echo  运行中可按 Ctrl+C 提前停止（已采集的结果会保留）
 echo ============================================================
 echo.
 
-".venv\Scripts\python.exe" "boss_vision\driver.py" run --live --limit %LIMIT% --reader auto --min-gap 10 --max-gap 18
+".venv\Scripts\python.exe" "boss_vision\driver.py" run --live --limit %LIMIT% --reader auto --min-gap 3 --max-gap 5
 
 echo.
 echo ============================================================

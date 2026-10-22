@@ -282,8 +282,9 @@ def log_cards(p: dict) -> None:
               f"人像得分={score:>5.3f} -> {act}")
 
 
-def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, int],
-        max_refresh: int = 3, min_gap: float = 15.0, max_gap: float = 25.0,
+def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scroll",
+        anchor: tuple[int, int] | None = None,
+        max_refresh: int | None = None, min_gap: float = 3.0, max_gap: float = 5.0,
         icon_check: bool = True, count_valid: bool = False,
         max_attempts: int | None = None, allow_refresh: bool = False,
         block_text_scan: bool = False, reader: str = "auto") -> int:
@@ -321,6 +322,8 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
     PROGRESS.update({"handled": 0, "valid": 0, "target": limit, "state": "running"})
     scrolls = 0
     refreshes = 0
+    no_progress = 0              # 连续"没有新候选人"的次数（不设滚动上限时的守卫）
+    NO_PROGRESS_LIMIT = 40       # 连续 40 次滚动都没有新人 -> 认为到底
     modal_fails = 0
     render_fails = 0            # 页面渲染未完成、刷新的次数
     seen_sigs: set[int] = set()   # 已处理过的卡片指纹，防刷新/回滚后重复处理
@@ -516,9 +519,15 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             print(f"  {dup} 张是已处理过的候选人 -> 跳过")
 
         if picked is None:
-            if scrolls < max_scrolls:
+            no_progress += 1
+            # 不设硬上限（max_scrolls=None），但连续无进展太多说明真没人了 -> 优雅停止
+            if max_scrolls is None and no_progress > NO_PROGRESS_LIMIT:
+                print(f"  连续 {no_progress} 次滚动都没拿到新候选人 -> 判断列表已到底，停止")
+                break
+            if max_scrolls is None or scrolls < max_scrolls:
                 scrolls += 1
-                print(f"  本屏没有可点的新卡片 -> 向下滚一屏（{scrolls}/{max_scrolls}）")
+                cap = "不限" if max_scrolls is None else max_scrolls
+                print(f"  本屏没有可点的新卡片 -> 向下滚一屏（{scrolls}/{cap}）")
                 if not live:
                     print(f"  dry-run：不动作。标注图 {annotate(img, p)}")
                     return 0
@@ -528,11 +537,12 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             if not allow_refresh:
                 print(f"  已向下滚动 {scrolls} 屏，没有新的可点卡片（刷新已禁用）-> 停止")
                 break
-            if refreshes >= max_refresh:
+            if max_refresh is not None and refreshes >= max_refresh:
                 print(f"  滚动 {scrolls} 次 + 刷新 {refreshes} 次都没拿到可点卡片 -> 停止")
                 break
             refreshes += 1
-            print(f"  本屏没有可点的新卡片 -> 刷新页面（第 {refreshes}/{max_refresh} 次）")
+            cap2 = "不限" if max_refresh is None else max_refresh
+            print(f"  本屏没有可点的新卡片 -> 刷新页面（第 {refreshes}/{cap2} 次）")
             if not live:
                 print(f"  dry-run：不刷新。标注图 {annotate(img, p)}")
                 return 0
@@ -540,7 +550,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             if not winenv.refresh_page(hwnd):
                 print("  ✗ 刷新失败：无法把 BOSS 窗口切到前台（F5 只会发给前台窗口）")
                 print("    请手动点一下 BOSS 页面让它成为前台窗口，或把 GUI 最小化后重试")
-                refreshes = max_refresh      # 不再重试刷新，交给上层停止
+                max_refresh = 0              # 刷新失败就不再重试，交给上层停止
                 continue
             time.sleep(3.0)
             pa = plan(winenv.grab_window(rect), icon_check)
@@ -773,6 +783,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
             modal_open[0] = False
             print("     已回到列表")
             handled += 1
+            no_progress = 0        # 采到人了，无进展计数归零
             if opened:
                 valid += 1
             PROGRESS.update({"handled": handled, "valid": valid})
@@ -841,8 +852,9 @@ def main() -> int:
     ap.add_argument("cmd", choices=["run", "plan"])
     ap.add_argument("--live", action="store_true", help="真的点击（默认只算不点）")
     ap.add_argument("--limit", type=int, default=1)
-    ap.add_argument("--max-scrolls", type=int, default=1)
-    ap.add_argument("--max-refresh", type=int, default=3,
+    ap.add_argument("--max-scrolls", type=int, default=None,
+                    help="最多向下滚几屏；不填=不限制（连续无进展会自动停）")
+    ap.add_argument("--max-refresh", type=int, default=None,
                     help="整屏卡片全跳过时，最多刷新页面几次换新候选人")
     ap.add_argument("--block-text-scan", dest="block_text_scan", action="store_true",
                     help="用 OCR 文字找内嵌推荐块（不依赖配色，较慢 1.5~3s/帧）")
@@ -852,10 +864,10 @@ def main() -> int:
                     help="整屏都跳过/滚动用尽时允许刷新页面（默认只往下滚，不刷新）")
     ap.add_argument("--no-icon-check", dest="icon_check", action="store_false",
                     help="不检测「同事沟通进度」图标，只按文字淡化判断")
-    ap.add_argument("--min-gap", type=float, default=15.0,
-                    help="两个候选人之间的最小间隔秒数（默认 15）")
-    ap.add_argument("--max-gap", type=float, default=25.0,
-                    help="两个候选人之间的最大间隔秒数（默认 25）")
+    ap.add_argument("--min-gap", type=float, default=3.0,
+                    help="两个候选人之间的最小间隔秒数（默认 3）")
+    ap.add_argument("--max-gap", type=float, default=5.0,
+                    help="两个候选人之间的最大间隔秒数（默认 5）")
     ap.add_argument("--read", choices=["none", "clip", "scroll"], default="scroll",
                     help="读取方式：scroll=弹窗内滚动逐屏 OCR（默认，能读全教育经历）；clip=Ctrl+A 复制")
     ap.add_argument("--anchor", default="1250,600", help="clip 方式下正文里的安全落点（窗口内坐标）")

@@ -66,8 +66,8 @@ class App:
         # 滚动屏数 / 刷新次数不再暴露在界面，用固定默认值（12 屏、3 次）
         self.var_scroll = tk.IntVar(value=12)
         self.var_refresh = tk.IntVar(value=3)
-        self.var_gap_min = tk.DoubleVar(value=10.0)
-        self.var_gap_max = tk.DoubleVar(value=18.0)
+        self.var_gap_min = tk.DoubleVar(value=3.0)
+        self.var_gap_max = tk.DoubleVar(value=5.0)
         self.var_icon = tk.BooleanVar(value=True)
         self.var_dry = tk.BooleanVar(value=False)
         self.var_refresh_page = tk.BooleanVar(value=False)   # 默认：不刷新，只往下滚
@@ -229,8 +229,8 @@ class App:
         kwargs = dict(
             live=not self.var_dry.get(),
             limit=int(self.var_limit.get()),
-            max_scrolls=12,      # 界面已移除该参数，用固定上限
-            max_refresh=3,       # 界面已移除该参数，用固定上限
+            max_scrolls=None,    # 不限制滚动次数（连续无进展会自动停）
+            max_refresh=None,    # 不限制刷新次数
             read="scroll",
             anchor=(1250, 600),
             min_gap=float(self.var_gap_min.get()),
