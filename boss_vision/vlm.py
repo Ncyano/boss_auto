@@ -199,7 +199,7 @@ def normalize(sections) -> dict:
     """
     if isinstance(sections, dict):
         sections = sections.get("sections") or []
-    work, education, projects, campus = [], [], [], []
+    work, education, projects, campus, fragments = [], [], [], [], []
     for item in sections or []:
         kind = (item.get("section") or "").strip().lower()
         if kind in ("education", "edu"):
@@ -231,8 +231,9 @@ def normalize(sections) -> dict:
         }
         if not (entry["company"] or entry["title"] or entry["period"] or entry["descriptions"]):
             continue
-        # 碎片：没有公司也没有时间，只有零散职责 -> 多半是上一屏的续行，丢掉
+        # 没有公司也没有时间、只有职责 -> 是跨屏续行片段，单独返回交给上层归属（不能直接丢）
         if not entry["company"] and not entry["period"]:
+            fragments.append({**entry, "section": kind or "work"})
             continue
         # 公司名其实是职位（没有机构后缀、含职位词）-> 归到 title
         if entry["company"] and not any(w in entry["company"] for w in ("公司", "集团", "工作室",
@@ -243,7 +244,8 @@ def normalize(sections) -> dict:
                 entry["company"] = ""
         {"project": projects, "campus": campus}.get(kind, work).append(entry)
 
-    return {"work": work, "education": education, "projects": projects, "campus": campus}
+    return {"work": work, "education": education, "projects": projects,
+            "campus": campus, "fragments": fragments}
 
 
 def merge_screens(collected: list[dict], new_entries: list[dict]) -> list[dict]:
@@ -434,6 +436,17 @@ def read_name_consensus(img, band, cfg: dict | None = None, log=print) -> tuple[
     if len(score) > 1:
         log(f"  [warn] 姓名候选不一致：{score}，采用 {best}")
     return best, raw_all
+
+def name_consensus_detail(img, band, cfg: dict | None = None, log=print) -> dict:
+    """读姓名并返回候选明细：{"name":..., "candidates":[{value, source, weight}], "disputed":bool}"""
+    name, votes = read_name_consensus(img, band, cfg, log=log)
+    uniq = [v for v in dict.fromkeys(votes) if v]
+    return {
+        "name": name,
+        "candidates": [{"value": v} for v in uniq],
+        "votes": votes,
+        "disputed": len(uniq) > 1,
+    }
 
 def self_test() -> int:
     """不需要 key 的自检：配置、JSON 抠取、归一、合并。"""

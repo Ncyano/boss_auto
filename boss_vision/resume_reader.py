@@ -112,6 +112,8 @@ class ReadResult:
     shots: list = field(default_factory=list)         # [(屏号, numpy 裁切图)]，仅内存
     review_reason: str = ""
     reader: str = "ocr"                             # ocr / vlm
+    name_candidates: list = field(default_factory=list)   # 姓名候选（含来源）
+    name_disputed: bool = False                     # 姓名存在分歧
     usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
 
     def as_dict(self) -> dict:
@@ -131,6 +133,8 @@ class ReadResult:
             "screen_count": self.screen_count,
             "section_seen": self.section_seen,
             "conflicts": self.conflicts,
+            "name_candidates": self.name_candidates,
+            "name_disputed": self.name_disputed,
             "incomplete": self.incomplete,
             "review_reason": self.review_reason,
         }
@@ -599,6 +603,8 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     projects: list[dict] = []
     campus: list[dict] = []
     usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "screens": 0}
+    unattributed: list[list[str]] = []          # 找不到归属的职责片段
+    edu_pending = 0                              # 教育字段不全时的补采计数
     prev_frame = None
 
     for step in range(max_steps):
@@ -614,24 +620,50 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             break
 
         parts = vlm.normalize(raw["sections"])
+        # 跨屏续行片段：归属到上一条经历（滚动后顶部露出的通常是上一段的尾巴）
+        for frag in parts.get("fragments") or []:
+            if not work:
+                unattributed.append(frag.get("descriptions") or [])
+                continue
+            target = work[-1]
+            added = False
+            for text in frag.get("descriptions") or []:
+                if text and text not in target.setdefault("descriptions", []):
+                    target["descriptions"].append(text)
+                    added = True
+            if added:
+                notes = target.setdefault("notes", [])
+                if "含跨屏续行" not in notes:
+                    notes.append("含跨屏续行")
         if step == 0:
             panel_name = _name_from_vlm(raw)
             # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
             zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
             res.name = zoom_name or panel_name
-            if zoom_name and panel_name and zoom_name != panel_name:
+            candidates = [v for v in dict.fromkeys(([panel_name] if panel_name else []) + list(votes)) if v]
+            res.name_candidates = candidates
+            if len(set(candidates)) > 1:
+                res.name_disputed = True
                 res.conflicts.append(
-                    f"姓名不一致：整屏 {panel_name} / 裁剪 {zoom_name}（采用 {res.name}）")
+                    f"姓名存在分歧：候选 {'/'.join(candidates)}（暂取 {res.name}）")
+                log(f"  ⚠ 姓名分歧：{candidates}，暂取 {res.name}")
             if not res.name:
                 log(f"  [warn] 姓名未识别，票={votes}")
         vlm.merge_screens(work, parts["work"])
         vlm.merge_screens(projects, parts["projects"])
         vlm.merge_screens(campus, parts["campus"])
         for e in parts["education"]:
-            if not any(_norm_period(e.get("period", "")) == _norm_period(old.get("period", ""))
-                       and (e.get("school") or "") == (old.get("school") or "")
-                       for old in education):
+            same = next((old for old in education
+                         if _norm_period(e.get("period", "")) == _norm_period(old.get("period", ""))
+                         and (not e.get("school") or not old.get("school")
+                              or e.get("school") == old.get("school"))), None)
+            if same is None:
                 education.append(e)
+            else:
+                # 同一段教育在多屏重复出现：补缺失字段（学校/专业/学历），而不是整体跳过
+                for field in ("school", "major", "degree", "period"):
+                    if not (same.get(field) or "").strip() and (e.get(field) or "").strip():
+                        same[field] = e[field]
         res.screen_count = step + 1
         u = raw.get("usage") or {}
         usage_total["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
@@ -647,10 +679,21 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         prev_frame = frame
 
         if education:
-            res.reached_education = True
-            res.complete = True
-            res.stopped_reason = "读取完成（已读到教育经历）"
-            break
+            first = education[0]
+            edu_ok = bool((first.get("school") or "").strip() and (first.get("degree") or "").strip())
+            if edu_ok:
+                res.reached_education = True
+                res.complete = True
+                res.stopped_reason = "读取完成（第一段教育字段完整）"
+                break
+            # 有教育条目但字段不全 -> 再往下滚一到两屏补采，别急着结束
+            edu_pending += 1
+            log(f"  第一段教育字段不全（{first.get('school') or '缺学校'}/"
+                f"{first.get('degree') or '缺学历'}），继续向下补采 {edu_pending}/2")
+            if edu_pending >= 2:
+                res.reached_education = True
+                res.stopped_reason = "第一段教育字段不全（已补采 2 屏仍未补齐）"
+                break
         if step > 0 and not moved:
             res.stopped_reason = "页面未移动（判断为到底，未读到教育经历）"
             break
@@ -675,6 +718,15 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     # 复核判定（与 OCR 版一致）
     if not res.name:
         res.review_reason = "姓名未识别"
+    if res.name_disputed:
+        res.review_reason = ((res.review_reason + "；") if res.review_reason else "") + \
+            f"姓名有分歧（候选 {'/'.join(res.name_candidates)}）"
+    if res.conflicts:
+        res.review_reason = ((res.review_reason + "；") if res.review_reason else "") + \
+            f"{len(res.conflicts)} 处冲突"
+    if unattributed:
+        res.review_reason = ((res.review_reason + "；") if res.review_reason else "") + \
+            f"{len(unattributed)} 段职责无法归属"
     if not education:
         res.incomplete = True
         res.review_reason = ((res.review_reason + "；") if res.review_reason else "") + \

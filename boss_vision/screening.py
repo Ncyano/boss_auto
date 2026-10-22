@@ -117,6 +117,14 @@ def screen_collection(row: dict, rules: dict) -> dict:
     if completed == "否":
         problems.append("采集未完成")
 
+    # 跨屏冲突（含姓名分歧）一律不进后续流程
+    try:
+        conflicts = int(row.get("冲突数") or 0)
+    except (TypeError, ValueError):
+        conflicts = 0
+    if conflicts > 0:
+        problems.append(f"{conflicts} 处冲突待核对")
+
     try:
         work_count = int(row.get("工作经历条数") or 0)
     except (TypeError, ValueError):

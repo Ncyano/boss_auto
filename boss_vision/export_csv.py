@@ -24,7 +24,8 @@ WORK_FIELDS = ("公司", "职位", "起止", "工作内容")
 
 HEAD_COLUMNS = ("批次", "序号", "姓名", "已打开", "工作经历条数")
 TAIL_COLUMNS = ("教育条数", "学校", "专业", "学历", "教育起止", "滚屏数", "停止原因",
-                "采集完成", "识别方式", "屏数", "读到章节", "冲突数", "需复核", "复核原因", "间隔(秒)")
+                "采集完成", "识别方式", "屏数", "读到章节", "冲突数", "姓名候选",
+                "需复核", "复核原因", "间隔(秒)")
 
 # 控制台只显示精简列（10 家全展开太宽，CSV 里是全量）
 TABLE_COLUMNS = ("序号", "姓名", "已打开", "工作经历条数",
@@ -100,6 +101,7 @@ def row_of(rec: dict, batch: str | None = None) -> dict[str, object]:
         "屏数": rec.get("screen_count") or (int(rec.get("steps") or 0) + 1),
         "读到章节": "/".join(rec.get("section_seen") or []),
         "冲突数": len(rec.get("conflicts") or []),
+        "姓名候选": "/".join(rec.get("name_candidates") or []),
         "需复核": "是" if rec.get("needs_review") else "否",
         "复核原因": rec.get("review_reason", ""),
         "间隔(秒)": rec.get("gap_before_next", ""),

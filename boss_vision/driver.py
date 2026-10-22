@@ -588,6 +588,8 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         "ocr_lines": rr.raw_lines,
                         "sidebar_entries": rr.sidebar,
                         "conflicts": rr.conflicts,
+                        "name_candidates": list(getattr(rr, "name_candidates", []) or []),
+                        "name_disputed": bool(getattr(rr, "name_disputed", False)),
                         "needs_review": bool(rr.incomplete),
                         "review_reason": rr.review_reason,
                     })
