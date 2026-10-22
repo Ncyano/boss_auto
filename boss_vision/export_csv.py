@@ -22,7 +22,8 @@ RUNS = _HERE / "runs"
 MAX_COMPANIES = 10                       # 工作经历最多展开 10 家
 WORK_FIELDS = ("公司", "职位", "起止", "工作内容")
 
-HEAD_COLUMNS = ("批次", "序号", "姓名", "已打开", "工作经历条数")
+HEAD_COLUMNS = ("批次", "序号", "姓名", "年龄", "学历性质", "毕业年份", "求职状态",
+                "已打开", "工作经历条数")
 TAIL_COLUMNS = ("教育条数", "学校", "专业", "学历", "教育起止", "滚屏数", "停止原因",
                 "采集完成", "识别方式", "屏数", "读到章节", "冲突数", "姓名候选",
                 "需复核", "复核原因", "间隔(秒)")
@@ -74,9 +75,14 @@ def row_of(rec: dict, batch: str | None = None) -> dict[str, object]:
     row: dict[str, object] = {}
     if batch is not None:
         row["批次"] = batch
+    basic = rec.get("basic") or {}
     row.update({
         "序号": rec.get("index"),
         "姓名": rec.get("name", ""),
+        "年龄": basic.get("age") or "",
+        "学历性质": basic.get("education_mode", ""),
+        "毕业年份": basic.get("graduation_year") or "",
+        "求职状态": basic.get("status", ""),
         "已打开": "是" if rec.get("opened") else "否",
         "工作经历条数": len(works),
     })

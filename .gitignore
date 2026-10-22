@@ -31,3 +31,6 @@ desktop.ini
 
 # 视觉模型密钥配置（本地私有）
 data/vlm-config.json
+
+# 人事筛选表（含候选人信息）
+未命名表格.xlsx

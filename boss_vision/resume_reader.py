@@ -112,6 +112,7 @@ class ReadResult:
     shots: list = field(default_factory=list)         # [(屏号, numpy 裁切图)]，仅内存
     review_reason: str = ""
     reader: str = "ocr"                             # ocr / vlm
+    basic: dict = field(default_factory=dict)       # 年龄/学历性质/毕业年份/求职状态
     name_candidates: list = field(default_factory=list)   # 姓名候选（含来源）
     name_disputed: bool = False                     # 姓名存在分歧
     usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
@@ -133,6 +134,7 @@ class ReadResult:
             "screen_count": self.screen_count,
             "section_seen": self.section_seen,
             "conflicts": self.conflicts,
+            "basic": self.basic,
             "name_candidates": self.name_candidates,
             "name_disputed": self.name_disputed,
             "incomplete": self.incomplete,
@@ -666,6 +668,10 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 if "含跨屏续行" not in notes:
                     notes.append("含跨屏续行")
         if step == 0:
+            try:
+                res.basic = vlm.normalize_basic(raw)
+            except Exception as exc:
+                log(f"  [warn] 基本信息解析失败：{exc}")
             panel_name = _name_from_vlm(raw)
             # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
             zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)

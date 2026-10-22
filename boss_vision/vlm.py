@@ -45,12 +45,17 @@ DEFAULT_CONFIG = {
 PROMPT = """你是简历信息抽取器。图片是 BOSS 直聘「线上简历」弹窗的一屏截图（可能只截到某段经历的一部分）。
 
 请只输出 JSON，不要解释、不要 markdown 代码块。结构：
-{"name":"","sections":[
+{"name":"","basic":{"age":"","education_mode":"","graduation_year":"","status":""},"sections":[
   {"section":"work","company":"","title":"","period":"","employment":"","responsibilities":[],"tags":[]},
   {"section":"education","school":"","major":"","degree":"","period":""}
 ]}
 
 规则：
+0a. basic 是简历顶部那行基本信息：
+    age=年龄数字（如「26岁」就填 26，没有就空）
+    education_mode=学习形式，只能是 全日制 / 非全日制 / 空（原文写了「非全日制」「函授」「自考」「成人」就填非全日制）
+    graduation_year=毕业年份（四位数字，如 2026；没写就空）
+    status=求职状态原样（如「离职-随时到岗」「在职-月内到岗」「应届生」）
 0. name 是候选人的姓名（简历弹窗顶部「张三 刚刚活跃」那种），不要带「在线/刚刚活跃/岁」等字样；
    这一屏看不到姓名就留空字符串。
 1. section 只能是 work / education / project / campus / other。
@@ -175,6 +180,7 @@ def read_screen(bgr, cfg: dict | None = None, log=print) -> dict:
             parsed = extract_json(text)
             if parsed is not None:
                 return {"name": (parsed.get("name") or "").strip(),
+                        "basic": parsed.get("basic") or {},
                         "sections": parsed.get("sections") or [],
                         "raw": text, "usage": resp.get("usage") or {}}
             last_error = "模型输出不是合法 JSON"
@@ -191,6 +197,27 @@ def read_screen(bgr, cfg: dict | None = None, log=print) -> dict:
 
 
 # ---------------------------------------------------------------- 结构归一
+
+def normalize_basic(raw: dict) -> dict:
+    """整理简历顶部基本信息（年龄/学习形式/毕业年份/求职状态）。"""
+    if isinstance(raw, dict) and "basic" in raw and not raw.get("sections"):
+        raw = raw.get("basic") or {}
+    basic = raw if isinstance(raw, dict) else {}
+    out = {"age": None, "education_mode": "", "graduation_year": None, "status": ""}
+    age = str(basic.get("age") or "").strip()
+    if age.isdigit() and 15 <= int(age) <= 70:
+        out["age"] = int(age)
+    mode = str(basic.get("education_mode") or "").strip()
+    if "非全日制" in mode or any(k in mode for k in ("函授", "自考", "成人", "业余", "网络教育")):
+        out["education_mode"] = "非全日制"
+    elif "全日制" in mode:
+        out["education_mode"] = "全日制"
+    year = str(basic.get("graduation_year") or "").strip()
+    if year.isdigit() and 1990 <= int(year) <= 2035:
+        out["graduation_year"] = int(year)
+    out["status"] = str(basic.get("status") or "").strip()[:20]
+    return out
+
 
 def normalize(sections) -> dict:
     """把模型输出整理成内部结构：work / education / projects / campus。

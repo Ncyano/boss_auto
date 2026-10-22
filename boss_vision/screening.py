@@ -247,6 +247,113 @@ def screen_work(row: dict, rules: dict, scorer=None, threshold_pass=None, thresh
             "text_len": len(text)}
 
 
+# ---------------- 人事规则（来自 data\\hr-rules.json） ----------------
+
+HR_RULES_DEFAULT = {
+    "年龄": {"上限": 30, "建议范围": [22, 28]},
+    "学历": {"要求全日制": True, "最低": "大专"},
+    "经验": {"最低年数": 0.5, "排除": ["应届生", "实习生"]},
+    "空档期": {"最长月数": 6},
+    "同行": {"黑名单": ["一硕", "云上源"]},
+}
+
+
+def load_hr_rules() -> dict:
+    """读人事规则；没有配置文件就用内置默认值。"""
+    path = ROOT / "data" / "hr-rules.json"
+    rules = json.loads(json.dumps(HR_RULES_DEFAULT))
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            # hr-rules.json 是给人看的结构，做一次映射
+            if isinstance(raw.get("年龄"), dict):
+                up = str(raw["年龄"].get("运营助理上限") or "").strip()
+                if up.isdigit():
+                    rules["年龄"]["上限"] = int(up)
+            if "同行" in raw and isinstance(raw["同行"], dict):
+                black = raw["同行"].get("排除") or []
+                if black:
+                    rules["同行"]["黑名单"] = [str(x) for x in black]
+            if isinstance(raw.get("规则阈值"), dict):
+                for key, value in raw["规则阈值"].items():
+                    if isinstance(rules.get(key), dict):
+                        rules[key].update(value)
+        except Exception as exc:
+            print(f"[warn] hr-rules.json 读取失败：{exc}")
+    return rules
+
+
+def _months_between(year: int, month: int, now=None) -> int:
+    import datetime as _dt
+    now = now or _dt.date.today()
+    return (now.year - year) * 12 + (now.month - month)
+
+
+def _last_job_gap_months(work: list[dict]) -> int | None:
+    """最近一段工作结束到今天的月数；「至今」返回 0；解析不出返回 None。"""
+    import re as _re
+
+    best = None
+    for w in work or []:
+        period = (w.get("period") or "").replace(" ", "")
+        if not period:
+            continue
+        if "至今" in period or "现在" in period:
+            return 0
+        m = _re.findall(r"(\d{4})[.\-/年]?(\d{1,2})?", period)
+        if len(m) >= 2:
+            year, month = m[-1]
+            if month:
+                best = _months_between(int(year), int(month))
+    return best
+
+
+def screen_hr_rules(row: dict, rules: dict, work: list[dict] | None = None) -> dict:
+    """按人事的口径判硬条件：年龄 / 全日制 / 应届 / 空档期 / 同行。"""
+    hr = rules.get("hr") if isinstance(rules.get("hr"), dict) else HR_RULES_DEFAULT
+    problems: list[str] = []
+
+    # 年龄
+    try:
+        age = int(row.get("年龄") or 0)
+    except (TypeError, ValueError):
+        age = 0
+    limit = hr.get("年龄", {}).get("上限")
+    if age and limit and age > int(limit):
+        problems.append(f"年龄 {age} 超过上限 {limit}")
+
+    # 学历性质
+    mode = (row.get("学历性质") or "").strip()
+    if hr.get("学历", {}).get("要求全日制") and mode == "非全日制":
+        problems.append("学历非全日制")
+
+    # 应届/实习
+    status = (row.get("求职状态") or "").strip()
+    for word in hr.get("经验", {}).get("排除", []):
+        if word and word in status:
+            problems.append(f"求职状态含「{word}」")
+
+    # 空档期
+    max_gap = hr.get("空档期", {}).get("最长月数")
+    if work is None:
+        work = []
+        for i in range(1, 11):
+            period = row.get(f"第{i}家起止")
+            if period:
+                work.append({"period": period})
+    gap = _last_job_gap_months(work)
+    if max_gap is not None and gap is not None and gap > int(max_gap):
+        problems.append(f"最近空档 {gap} 个月（上限 {max_gap}）")
+
+    # 同行
+    text = " ".join((row.get(f"第{i}家公司") or "") for i in range(1, 11))
+    for kw in hr.get("同行", {}).get("黑名单", []):
+        if kw and kw in text:
+            problems.append(f"同行公司（{kw}）")
+
+    return {"hr_ok": not problems, "hr_reason": "；".join(problems)}
+
+
 def screen_row(row: dict, rules: dict, scorer=None) -> dict:
     """对一条候选人记录按顺序判定：采集质量 -> 学历 -> 工作经历门槛 -> 评分。"""
     gate = screen_collection(row, rules)
@@ -263,6 +370,23 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             "经历结论": "—",
             "最终结论": COLLECT_REVIEW,
             "原因": gate["collect_reason"],
+        }
+
+    # 人事的硬条件（年龄 / 全日制 / 应届 / 空档期 / 同行）先过一遍
+    hr = screen_hr_rules(row, rules)
+    if not hr["hr_ok"]:
+        return {
+            "序号": row.get("序号", ""),
+            "姓名": row.get("姓名", ""),
+            "学校": row.get("学校", ""),
+            "学历": row.get("学历", ""),
+            "工作经历条数": row.get("工作经历条数", ""),
+            "教育结论": "—",
+            "教育原因": "—",
+            "学校匹配": row.get("学校", ""),
+            "经历结论": "—",
+            "最终结论": REJECT,
+            "原因": hr["hr_reason"],
         }
 
     edu = screen_education(row, rules)
