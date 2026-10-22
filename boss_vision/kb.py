@@ -201,6 +201,41 @@ def _norm_company(text: str) -> str:
     t = re.sub(r"\s+", "", t)
     return t.rstrip("。.;；,，")
 
+
+def _similarity(a: str, b: str) -> float:
+    import difflib
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _is_peer_company(company: str, params: dict) -> bool:
+    """同行判定：品牌词命中 + 与对应全称足够相似。
+
+    · 只用品牌词（云上源/一硕/谷一~三/南风网络/正北传媒/飞云好物/天成卓越），
+      不用「网络」「科技」这类通用词，避免误伤无关公司
+    · 品牌词 ≥4 字：命中即可（如「飞云好物」「天成卓越」）
+    · 品牌词 2~3 字：还要求与全称相似度 ≥ min_ratio（默认 0.45）
+    """
+    name = _norm_company(company)
+    if not name:
+        return False
+    brands = params.get("brands") or []
+    min_ratio = float(params.get("min_ratio", 0.45))
+
+    for item in brands:
+        if isinstance(item, str):
+            token, full = item, item
+        else:
+            token = str(item.get("token") or "")
+            full = str(item.get("full") or token)
+        if not token or token not in name:
+            continue
+        if len(token) >= 4:
+            return True
+        if _similarity(name, _norm_company(full)) >= min_ratio:
+            return True
+    return False
+
+
 def _title_hits(entry: dict, titles: list[str]) -> list[str]:
     """职位/职责里命中的岗位词（取最长匹配，避免"客服"吞掉"售前客服"）。"""
     text = " ".join([str(entry.get("title") or "")] +
@@ -357,16 +392,14 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
             advisories.append(f"最近空档 {gap} 个月（上限 {gap_max}）")
 
     p03 = params_of(kb, "P03") or {}
-    peers_exact = {_norm_company(c) for c in (p03.get("companies") or []) if c}
     companies = [(w.get("company") or "").strip() for w in work]
     if not any(companies):            # 兼容旧接口：只给了 company_N
         companies = [resume.get(f"company_{i}") or "" for i in range(1, 11)]
     for company in companies:
         if not company:
             continue
-        # 只比对公司全称（用户要求：不做关键词/简称衍生）
-        if peers_exact and _norm_company(company) in peers_exact:
-            failures.append({"rule": "P03", "reason": f"同行公司（全称匹配）：{company}",
+        if _is_peer_company(company, p03):
+            failures.append({"rule": "P03", "reason": f"同行公司：{company}",
                              "evidence": company})
             break
 
