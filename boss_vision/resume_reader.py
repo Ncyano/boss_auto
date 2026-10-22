@@ -593,11 +593,11 @@ def card_name(img, card, log=print) -> str:
 
 
 def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
-                    settle: float = 0.6, scroll_clicks: int = -5,
+                    settle: float = 0.6, scroll_clicks: int = -4,
                     cfg: dict | None = None) -> ReadResult:
     """视觉模型逐屏读取。
 
-    速度相关：每屏滚 -5 格（约 600px，面板高约 1260px，仍有 50% 重叠不会漏内容），
+    速度相关：每屏滚 -4 格（约 480px，面板高约 1260px，重叠 60% 以上，避免公司名行被切在屏间），
     页面稳定等待 0.6 秒。相比 OCR 版（-3 / 0.9s）每屏省约 0.5 秒，
     但因为一屏能多读 60% 内容，整体屏数少 30~50%。
     """
@@ -706,7 +706,10 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 log(f"  ⚠ 姓名分歧：{candidates}，暂取 {res.name}")
             if not res.name:
                 log(f"  [warn] 姓名未识别，票={votes}")
+        before = len(work)
         vlm.merge_screens(work, parts["work"])
+        for entry in work[before:]:          # 这一屏新增的条目：记住来自第几屏
+            entry["_screen"] = step
         vlm.merge_screens(projects, parts["projects"])
         vlm.merge_screens(campus, parts["campus"])
         for e in parts["education"]:
@@ -776,6 +779,47 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             for frag in pending_fragments:
                 unattributed.append(frag.get("descriptions") or [])
         pending_fragments.clear()
+
+    # ---------- 定向补采 A：缺公司名/职位 -> 回到那一屏放大重读 ----------
+    try:
+        import completeness as _cmp2
+        need_company = [w for w in work
+                        if not (w.get("company") or "").strip()
+                        or not (w.get("title") or "").strip()]
+        if need_company:
+            zoom_cfg = dict(cfg)
+            zoom_cfg["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+            shots_by_step = {step: crop for step, crop in res.shots}
+            fixed = 0
+            for entry in need_company:
+                step = entry.get("_screen")
+                crop = shots_by_step.get(step)
+                if crop is None:
+                    continue
+                log(f"  第 {step + 1} 屏有经历缺公司名/职位，放大重读该屏")
+                try:
+                    raw3 = vlm.read_screen(crop, zoom_cfg, log=log)
+                except Exception as exc:
+                    log(f"    [warn] 该屏重读失败：{exc}")
+                    continue
+                parts3 = vlm.normalize(raw3["sections"])
+                u3 = raw3.get("usage") or {}
+                usage_total["prompt_tokens"] += int(u3.get("prompt_tokens") or 0)
+                usage_total["completion_tokens"] += int(u3.get("completion_tokens") or 0)
+                usage_total["screens"] += 1
+                match = _match_entry(entry, parts3["work"])
+                if match and (match.get("company") or "").strip():
+                    entry["company"] = match["company"]
+                    if not (entry.get("title") or "").strip() and match.get("title"):
+                        entry["title"] = match["title"]
+                    if not (entry.get("period") or "").strip() and match.get("period"):
+                        entry["period"] = match["period"]
+                    fixed += 1
+                    log(f"    补回：{entry['company']} / {entry.get('title') or ''}")
+            if fixed:
+                log(f"  按屏补回 {fixed} 条经历的公司名/职位")
+    except Exception as exc:
+        log(f"  [warn] 按屏补采失败：{exc}")
 
     # ---------- 定向补采：缺职责就放大当前屏重读 ----------
     try:
@@ -855,6 +899,41 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         res.incomplete = True
     return res
 
+
+def _norm_text(text: str) -> str:
+    return "".join(ch for ch in (text or "") if ch.isalnum())
+
+
+def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
+    """在同一屏的重读结果里找回同一条经历（先按职责重叠，再按时间）。"""
+    t_duties = [_norm_text(x) for x in (target.get("descriptions") or []) if _norm_text(x)]
+    t_period = (target.get("period") or "").replace(" ", "")
+
+    best, best_score = None, 0
+    for cand in candidates or []:
+        c_duties = [_norm_text(x) for x in (cand.get("descriptions") or []) if _norm_text(x)]
+        score = 0
+        for td in t_duties:
+            for cd in c_duties:
+                if td and cd and (td in cd or cd in td):
+                    score += 3
+                    break
+        c_period = (cand.get("period") or "").replace(" ", "")
+        if t_period and c_period and t_period == c_period:
+            score += 5
+        title = _norm_text(target.get("title"))
+        if title and title in _norm_text(cand.get("title")):
+            score += 2
+        if score > best_score:
+            best, best_score = cand, score
+
+    # 只有在证据足够时才认（至少一条职责重合 或 时间相同）
+    if best_score >= 3:
+        return best
+    # 一屏里只有一条经历时，直接认
+    if len(candidates or []) == 1:
+        return candidates[0]
+    return None
 
 def _name_by_ocr(img, band, log=print) -> str:
     """姓名兜底：只在顶部一小块跑 OCR（约 0.2 秒），模型没读到时用。"""

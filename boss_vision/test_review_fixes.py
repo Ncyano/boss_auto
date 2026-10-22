@@ -204,12 +204,41 @@ def test_retry_richness() -> None:
     check("缺失少但内容空 -> 不算更好", not richness(empty) > richness(full))
 
 
+def test_entry_match() -> None:
+    print("\n[6] 按屏补采：能找回同一条经历")
+    from resume_reader import _match_entry
+
+    target = {"period": "2022.12-2025.11", "title": "国内电商运营", "company": "",
+              "descriptions": ["独立负责抖音快手本地生活 0 到 100 战略规划",
+                               "主导策划搭建标准化内容生产 SOP"]}
+    # 重读该屏：同一条经历这次读到了公司名
+    cands = [
+        {"period": "2026.02-2026.07", "title": "销售", "company": "别的公司",
+         "descriptions": ["走访实体门店"]},
+        {"period": "2022.12-2025.11", "title": "国内电商运营", "company": "福州芝根芝底餐饮管理有限公司",
+         "descriptions": ["独立负责抖音快手本地生活 0 到 100 战略规划"]},
+    ]
+    got = _match_entry(target, cands)
+    check("按时间+职责匹配到正确经历",
+          got is not None and got["company"] == "福州芝根芝底餐饮管理有限公司",
+          str(got and got.get("company")))
+
+    got2 = _match_entry(target, [{"period": "", "title": "", "company": "唯一公司",
+                                  "descriptions": ["完全无关"]}])
+    check("一屏只有一条 -> 直接认", got2 is not None and got2["company"] == "唯一公司")
+
+    got3 = _match_entry(target, [{"period": "", "title": "", "company": "A", "descriptions": []},
+                                 {"period": "", "title": "", "company": "B", "descriptions": []}])
+    check("多条且无证据 -> 不乱认", got3 is None)
+
+
 def main() -> int:
     test_fragments()
     test_education_continue()
     test_name_dispute()
     test_dedupe()
     test_retry_richness()
+    test_entry_match()
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
