@@ -36,6 +36,14 @@ STOP = False                                  # GUI 点"停止"时置 True
 PROGRESS = {"handled": 0, "valid": 0, "target": 0, "state": "idle"}
 
 
+def _fmt_duration(seconds: float) -> str:
+    """把秒数格式化成 1:23 / 1:02:03。"""
+    total = int(max(0, seconds))
+    h, rem = divmod(total, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
 def request_stop() -> None:
     global STOP
     STOP = True
@@ -301,6 +309,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
         winenv.focus(hwnd)
         time.sleep(0.4)
 
+    started_at = time.time()
     stamps = time.strftime("%Y%m%d-%H%M%S")
     OUT.mkdir(exist_ok=True)
     results: list[dict] = []
@@ -336,6 +345,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
 
 
     last_record_at: list[float] = []
+
 
     def dump_results(with_csv: bool = True) -> None:
         # 距最后一次记录超过 30 分钟 -> 这是"很久以前跑完的进程在退出时回写"，直接跳过
@@ -799,7 +809,10 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
     except Exception as exc:
         print(f"[warn] 判定汇总失败：{exc}")
 
+    duration = time.time() - started_at
     print(f"\n{tag}：尝试 {handled} 次，有效 {valid} 个（目标 {limit}）")
+    print(f"总耗时：{_fmt_duration(duration)}"
+          + (f"（平均 {_fmt_duration(duration / valid)}/人）" if valid else ""))
     print(f"结果目录：{OUT}")
     print(f"  {stamps}-results.json   结构化结果")
     print(f"  {stamps}-summary.csv    汇总表（含工作内容）")

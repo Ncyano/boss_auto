@@ -35,6 +35,16 @@ class _QueueWriter:
         pass
 
 
+def _fmt_duration(seconds: float) -> str:
+    """把秒数格式化成 1:23 / 1:02:03 这种。"""
+    total = int(max(0, seconds))
+    h, rem = divmod(total, 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{sec:02d}"
+    return f"{m}:{sec:02d}"
+
+
 class App:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -42,6 +52,7 @@ class App:
         self.boot_ts = time.time()          # 窗口启动时间，用来提示"代码已更新"
         self.log_queue: queue.Queue = queue.Queue()
         self.start_ts: float | None = None
+        self.last_elapsed: float = 0.0            # 上一次任务的耗时（秒）
 
         root.title("BOSS 自动开简历 · 控制台")
         root.geometry("980x720")
@@ -52,8 +63,9 @@ class App:
         top.pack(fill="x", padx=10, pady=(10, 6))
 
         self.var_limit = tk.IntVar(value=20)
-        self.var_scroll = tk.IntVar(value=10)
-        self.var_refresh = tk.IntVar(value=5)
+        # 滚动屏数 / 刷新次数不再暴露在界面，用固定默认值（12 屏、3 次）
+        self.var_scroll = tk.IntVar(value=12)
+        self.var_refresh = tk.IntVar(value=3)
         self.var_gap_min = tk.DoubleVar(value=15.0)
         self.var_gap_max = tk.DoubleVar(value=25.0)
         self.var_icon = tk.BooleanVar(value=True)
@@ -83,10 +95,6 @@ class App:
 
         add_row(1, "有效人次目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
                 "（只有成功打开简历的才算一次）")
-        add_row(2, "最多滚动屏数", ttk.Spinbox(top, from_=0, to=100, textvariable=self.var_scroll, width=8),
-                "（一屏约 6~7 张卡）")
-        add_row(3, "最多刷新次数", ttk.Spinbox(top, from_=0, to=50, textvariable=self.var_refresh, width=8),
-                "（整屏都跳过 / 拿不到新卡时用）")
 
         gap_row = ttk.Frame(top)
         ttk.Label(gap_row, text="间隔秒数").pack(side="left")
@@ -94,15 +102,15 @@ class App:
         ttk.Label(gap_row, text="~").pack(side="left")
         ttk.Spinbox(gap_row, from_=0, to=600, increment=1, textvariable=self.var_gap_max, width=6).pack(side="left", padx=4)
         ttk.Label(gap_row, text="（每人间随机）").pack(side="left")
-        add_row(4, "", gap_row)
+        add_row(2, "", gap_row)
 
-        add_row(5, "判据", ttk.Checkbutton(top, text="检测「同事沟通进度」人像图标（勾掉则只按文字淡化）",
+        add_row(3, "判据", ttk.Checkbutton(top, text="检测「同事沟通进度」人像图标（勾掉则只按文字淡化）",
                                            variable=self.var_icon))
-        add_row(6, "刷新", ttk.Checkbutton(
+        add_row(4, "刷新", ttk.Checkbutton(
             top, text="滚动用尽时刷新页面（默认关闭：只向下滚，不刷新）", variable=self.var_refresh_page))
-        add_row(7, "块识别", ttk.Checkbutton(
+        add_row(5, "块识别", ttk.Checkbutton(
             top, text="用文字找推荐块（不依赖配色，较慢）", variable=self.var_text_scan))
-        add_row(8, "模式", ttk.Checkbutton(top, text="试运行（只识别不点击）", variable=self.var_dry))
+        add_row(6, "模式", ttk.Checkbutton(top, text="试运行（只识别不点击）", variable=self.var_dry))
 
         # ---------- 按钮 ----------
         btns = ttk.Frame(root, padding=(10, 0))
@@ -113,6 +121,8 @@ class App:
         self.btn_stop.pack(side="left", padx=8)
         self.lbl_status = ttk.Label(btns, text="状态：空闲")
         self.lbl_status.pack(side="left", padx=16)
+        self.lbl_elapsed = ttk.Label(btns, text="耗时 --:--", foreground="#06c")
+        self.lbl_elapsed.pack(side="left", padx=8)
 
         # ---------- 进度条 ----------
         prog = ttk.Frame(root, padding=(10, 0))
@@ -157,10 +167,19 @@ class App:
         self.bar["value"] = min(100, done * 100 / target)
         state_map = {"idle": "空闲", "running": "运行中", "done": "已完成", "stopped": "已停止"}
         st = state_map.get(p.get("state", "idle"), p.get("state"))
-        elapsed = f"  用时 {int(time.time() - self.start_ts)}s" if self.start_ts and p.get(
-            "state") == "running" else ""
         self.lbl_status.configure(
-            text=f"状态：{st}   有效 {done}/{target}   尝试 {p.get('handled', 0)} 次{elapsed}")
+            text=f"状态：{st}   有效 {done}/{target}   尝试 {p.get('handled', 0)} 次")
+
+        # 任务耗时：运行中实时走，结束后显示总时长
+        if self.start_ts:
+            elapsed = time.time() - self.start_ts
+            self.last_elapsed = elapsed
+            running = p.get("state") == "running"
+            self.lbl_elapsed.configure(
+                text=("耗时 " if running else "总耗时 ") + _fmt_duration(elapsed),
+                foreground="#06c" if running else "#070")
+        else:
+            self.lbl_elapsed.configure(text="耗时 --:--", foreground="#888")
 
         if self.worker and self.worker.is_alive():
             self.root.after(300, self.pump)
@@ -210,8 +229,8 @@ class App:
         kwargs = dict(
             live=not self.var_dry.get(),
             limit=int(self.var_limit.get()),
-            max_scrolls=int(self.var_scroll.get()),
-            max_refresh=int(self.var_refresh.get()),
+            max_scrolls=12,      # 界面已移除该参数，用固定上限
+            max_refresh=3,       # 界面已移除该参数，用固定上限
             read="scroll",
             anchor=(1250, 600),
             min_gap=float(self.var_gap_min.get()),
