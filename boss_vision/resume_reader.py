@@ -594,7 +594,7 @@ def card_name(img, card, log=print) -> str:
 
 def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     settle: float = 0.6, scroll_clicks: int = -4,
-                    cfg: dict | None = None) -> ReadResult:
+                    cfg: dict | None = None, name_hint: str = "") -> ReadResult:
     """视觉模型逐屏读取。
 
     速度相关：每屏滚 -4 格（约 480px，面板高约 1260px，重叠 60% 以上，避免公司名行被切在屏间），
@@ -658,11 +658,15 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     import judge as _judge
                     st = _judge.structure_text(otext, _judge.load_config())
                     sdata = st.get("data") or {}
+                    try:
+                        merged_usage = _merge_usage(ocr_res.get("usage"), st.get("usage"))
+                    except Exception:
+                        merged_usage = ocr_res.get("usage") or {}
                     raw = {"name": (sdata.get("name") or "").strip(),
                            "basic": sdata.get("basic") or {},
                            "sections": sdata.get("sections") or [],
                            "raw": otext,
-                           "usage": _merge_usage(ocr_res.get("usage"), st.get("usage"))}
+                           "usage": merged_usage}
                 except Exception as exc:
                     log(f"  [warn] 结构化失败，改用 OCR 原文兜底：{exc}")
                     raw = {"name": "", "basic": {}, "sections": [], "raw": otext,
@@ -698,33 +702,30 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 res.basic = vlm.normalize_basic(raw)
             except Exception as exc:
                 log(f"  [warn] 基本信息解析失败：{exc}")
-        elif res.basic is not None:
-            # 学习形式/毕业年份经常写在后几屏的教育区，缺了就补上
-            try:
-                later = vlm.normalize_basic(raw)
-                for key in ("education_mode", "graduation_year", "age", "status"):
-                    if not res.basic.get(key) and later.get(key):
-                        res.basic[key] = later[key]
-            except Exception:
-                pass
+
             panel_name = _name_from_vlm(raw)
-            # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
-            zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
-            # 读不到像样的姓名 -> 弹窗可能还没回到顶部，强行再回顶一次重读
-            if not zoom_name:
-                log("  姓名区没拍到（可能没回顶），再滚一次顶部重读")
-                try:
-                    tx = ox + band.x + band.w // 2
-                    ty = oy + band.y + band.h // 2
-                    winenv.scroll(tx, ty, 8)
-                    time.sleep(0.8)
-                    img = winenv.grab_window(rect)
-                    band = panel_band(img, wide)
-                    zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
-                    if zoom_name:
-                        log(f"  重读成功: {zoom_name}")
-                except Exception as exc:
-                    log(f"  [warn] 重新回顶失败：{exc}")
+            # 卡片姓名（列表上 OCR 出来的）与面板姓名一致 -> 直接采信，省掉 1~3 次投票调用
+            if name_hint and panel_name and name_hint == panel_name:
+                log(f"  姓名与列表卡片一致（{panel_name}），跳过投票")
+                zoom_name, votes = panel_name, [panel_name]
+            else:
+                # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
+                zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
+                # 读不到像样的姓名 -> 弹窗可能还没回到顶部，强行再回顶一次重读
+                if not zoom_name:
+                    log("  姓名区没拍到（可能没回顶），再滚一次顶部重读")
+                    try:
+                        tx = ox + band.x + band.w // 2
+                        ty = oy + band.y + band.h // 2
+                        winenv.scroll(tx, ty, 8)
+                        time.sleep(0.8)
+                        img = winenv.grab_window(rect)
+                        band = panel_band(img, wide)
+                        zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
+                        if zoom_name:
+                            log(f"  重读成功: {zoom_name}")
+                    except Exception as exc:
+                        log(f"  [warn] 重新回顶失败：{exc}")
             res.name = zoom_name or panel_name
             candidates = [v for v in dict.fromkeys(([panel_name] if panel_name else []) + list(votes)) if v]
             res.name_candidates = candidates
@@ -735,6 +736,15 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 log(f"  ⚠ 姓名分歧：{candidates}，暂取 {res.name}")
             if not res.name:
                 log(f"  [warn] 姓名未识别，票={votes}")
+        elif res.basic is not None:
+            # 学习形式/毕业年份经常写在后几屏的教育区，缺了就补上
+            try:
+                later = vlm.normalize_basic(raw)
+                for key in ("education_mode", "graduation_year", "age", "status"):
+                    if not res.basic.get(key) and later.get(key):
+                        res.basic[key] = later[key]
+            except Exception:
+                pass
         if parts["education"] and step not in edu_screens:
             edu_screens.append(step)
         before = len(work)
@@ -874,7 +884,9 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     try:
         if not res.basic.get("graduation_year") and education:
             import re as _re
-            years = [int(y) for y in _re.findall(r"(19|20)\d{2}", education[0].get("period") or "")]
+            years = [int(y) for y in _re.findall(r"(?<!\d)(\d{4})(?!\d)",
+                                                  education[0].get("period") or "")
+                     if 1980 <= int(y) <= 2035]
             if years:
                 res.basic["graduation_year"] = max(years)
                 log(f"  毕业年份按教育起止推定：{res.basic['graduation_year']}")
@@ -1035,6 +1047,18 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
     if len(candidates or []) == 1:
         return candidates[0]
     return None
+
+def _merge_usage(a: dict | None, b: dict | None) -> dict:
+    """合并两次调用的 token 用量（OCR + 结构化）。"""
+    a = a or {}
+    b = b or {}
+    total = int(a.get("total_tokens") or 0) + int(b.get("total_tokens") or 0)
+    return {
+        "prompt_tokens": int(a.get("prompt_tokens") or 0) + int(b.get("prompt_tokens") or 0),
+        "completion_tokens": int(a.get("completion_tokens") or 0)
+                              + int(b.get("completion_tokens") or 0),
+        "total_tokens": total,
+    }
 
 def _school_name_candidates(crop) -> list[str]:
     """在教育屏截图里用 OCR 找"像校名"的文本，并只保留名单内的。"""
