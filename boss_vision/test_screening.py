@@ -76,9 +76,9 @@ def main() -> int:
     check("未接模型 -> 待评分", pending["work_result"] == "待评分", pending["work_reason"])
 
     print("\n[4] 整体判定顺序")
-    # 知识库 E03：校名未命中指定名单 ≠ 学历造假，只能判"待复核"（未命中与确定不存在必须区分）
+    # 二元口径：校名核实不了 -> 不合格（原因写明 E03，便于补采）
     r1 = screening.screen_row(row(学校="某某学院", 学历="本科", 工作经历条数=3), rules)
-    check("校名未命中 -> 待复核", r1["最终结论"] == screening.COLLECT_REVIEW
+    check("校名未命中 -> 不合格", r1["最终结论"] == screening.REJECT
           and r1["经历结论"] == "—", r1["原因"])
 
     # 学历层次低于大专才由 E01 直接判死

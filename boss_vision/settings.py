@@ -52,6 +52,11 @@ DEFAULTS: dict = {
         "retries": 3,
         "thinking": "disabled",
     },
+    "policy": {
+        "_说明": "结论口径：binary=只输出合适/不合适；unknown_verdict 决定核实不了时怎么判",
+        "verdict_mode": "binary",
+        "unknown_verdict": "不合适",
+    },
     "paths": {
         "data_dir": "data",
         "kb_dir": "运营助理知识库_v0.1",

@@ -80,7 +80,7 @@ SYSTEM_PROMPT = """你是运营助理岗位的简历证据抽取与匹配助手�
      "reason": "一句话说明"}
   ],
   "missing_information": ["缺少什么信息"],
-  "final_recommendation": "建议合适|不合适|待复核",
+  "final_recommendation": "建议合适|不合适",
   "decision_basis": "一句话总结依据"
 }
 
@@ -92,9 +92,10 @@ SYSTEM_PROMPT = """你是运营助理岗位的简历证据抽取与匹配助手�
   证据就是这些职责原文本身）。
 - 电商店铺运营（选品、上架、SKU维护、活动报名、推广投放、数据复盘、供应链对接）
   属于 W04 运营相关经验，可判"建议合适"，不要因为"没有直接对客户沟通"就判不合适。
-- "待复核"只用于**资料缺失**：没有工作经历文本、经历明显截断、职责为空。
-  不要因为"职位名不典型"或"写得不详细"就转待复核。
-- 判断必须落到 合适/不合适 其中之一，除非确实缺资料。
+- 只输出两个结论：建议合适 / 不合适，不允许输出"待复核"。
+- 资料不足（没有职责原文、经历截断、只有职位名）时，按**现有证据**判断：
+  看不到任何客户沟通/运营动作 -> 不合适；有明确相关动作 -> 建议合适。
+- 不要因为"职位名不典型"或"写得不详细"就回避判断。
 """
 
 
@@ -197,8 +198,9 @@ def judge(work_text: str, kb: dict | None = None, cfg: dict | None = None,
             data = extract_json(text)
             if data and data.get("final_recommendation"):
                 rec = str(data["final_recommendation"]).strip()
-                if rec not in ("建议合适", "不合适", "待复核"):
-                    rec = "待复核"
+                if rec not in ("建议合适", "不合适"):
+                    # 模型偶尔仍会输出待复核/其他值，一律按不合适收口（二元口径）
+                    rec = "不合适" if ("不合适" in rec or "待" in rec) else "建议合适"
                 results = []
                 for item in (data.get("rule_results") or []):
                     if not isinstance(item, dict):
@@ -260,7 +262,8 @@ def self_test() -> int:
 
     print("[1] 配置")
     cfg = load_config()
-    check("配置文件存在", CONFIG.exists(), str(CONFIG))
+    import settings as _settings
+    check("统一配置文件存在", _settings.config_path().exists(), str(_settings.config_path()))
     check("默认 deepseek-flash", cfg["model"] == "deepseek-flash", cfg["model"])
     check("base_url", "api.deepseek.com" in cfg["base_url"], cfg["base_url"])
 

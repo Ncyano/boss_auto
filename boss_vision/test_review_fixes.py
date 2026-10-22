@@ -153,7 +153,7 @@ def test_name_dispute() -> None:
     gate = screening.screen_collection(row, screening.load_rules())
     check("筛选入口拦住", not gate["collect_ok"], gate["collect_reason"])
     verdict = screening.screen_row(row, screening.load_rules())
-    check("结论为采集待复核", verdict["最终结论"] == screening.COLLECT_REVIEW, verdict["最终结论"])
+    check("结论为不合格（二元口径）", verdict["最终结论"] == screening.REJECT, verdict["最终结论"])
 
     ok_row = dict(row, **{"需复核": "否", "复核原因": "", "冲突数": 0})
     check("无冲突时正常通过", screening.screen_collection(ok_row, screening.load_rules())["collect_ok"])

@@ -224,15 +224,22 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
         else:
             advisories.append(f"累计工作 {months} 个月（门槛 {min_months}）")
 
-    # ---------- 结论 ----------
+    # ---------- 结论（二元：只有 合适 / 不合适） ----------
+    # 知识库口径：核实不了（采集缺失/学历未知/学校未核实）不能算通过，
+    # 在二元模式下按"不合适"处理，并保留原因。
+    if reviews:
+        for text in reviews:
+            failures.append({"rule": "Q01", "reason": f"无法核实：{text}",
+                             "evidence": "资料缺失"})
+
     if failures:
         verdict = "不合适"
-    elif reviews:
-        verdict = "待复核"
     elif education_status == "通过":
         verdict = ""          # 交给工作证据模型（W01–W05）
     else:
-        verdict = "待复核"
+        failures.append({"rule": "E01", "reason": "学历状态未知，无法核实",
+                         "evidence": education_evidence or "无教育记录"})
+        verdict = "不合适"
 
     return {
         "verdict": verdict,
@@ -243,7 +250,7 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
         "advisories": advisories,
         "exclusions": exclusions,
         "kb_version": kb.get("version", ""),
-        "reason": "；".join([f["reason"] for f in failures] + reviews),
+        "reason": "；".join(f["reason"] for f in failures),
     }
 
 
@@ -271,14 +278,15 @@ def self_test() -> int:
     check("E03 只能待复核", rule_kind(kb, "E03") == "review")
 
     print("\n[2] 判定")
-    base = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2020-2024"}],
+    base = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2020-2024",
+                           "mode": "全日制"}],
             "work": [{"company": "甲公司", "title": "客服", "period": "2024.01-至今"}],
             "collection": {"complete": True, "needs_review": False},
-            "basic": {"age": 25}, "gap_months": 0, "total_work_months": 20,
-            "company_1": "甲公司"}
+            "basic": {"age": 25, "education_mode": "全日制"}, "gap_months": 0,
+            "total_work_months": 20, "company_1": "甲公司"}
 
     out = evaluate(dict(base), kb)
-    check("正常画像留给工作模型", out["verdict"] == "", out["verdict"])
+    check("正常画像留给工作模型", out["verdict"] == "", out["verdict"] or "（空=交给模型）")
 
     aged = evaluate({**base, "basic": {"age": 35}}, kb)
     check("35 岁 -> 不合适（A01）", aged["verdict"] == "不合适", aged["verdict"])
@@ -299,7 +307,7 @@ def self_test() -> int:
 
     review = evaluate({**base, "collection": {"complete": False, "needs_review": True,
                                               "review_reason": ["姓名未识别"]}}, kb)
-    check("采集有问题 -> 待复核", review["verdict"] == "待复核", review["verdict"])
+    check("采集有问题 -> 不合格（二元口径）", review["verdict"] == "不合适", review["verdict"])
 
     gap = evaluate({**base, "gap_months": 20}, kb)
     check("空档超 6 个月 -> 不合适（P02）", gap["verdict"] == "不合适", gap["verdict"])
@@ -318,7 +326,7 @@ def self_test() -> int:
     check("命中 P01", any(f["rule"] == "P01" for f in short["failures"]))
 
     noage = evaluate({**base, "basic": {}}, kb)
-    check("年龄未知 -> 待复核", noage["verdict"] == "待复核", noage["verdict"])
+    check("年龄未知 -> 不合格（二元口径）", noage["verdict"] == "不合适", noage["verdict"])
 
     print(f"\n{ok}/{ok + fail} 通过")
     return 0 if fail == 0 else 1

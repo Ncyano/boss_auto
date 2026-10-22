@@ -540,7 +540,8 @@ def self_test() -> int:
 
     print("[1] 配置")
     cfg = load_config()
-    check("配置文件已生成", CONFIG.exists(), str(CONFIG))
+    import settings as _settings
+    check("统一配置文件存在", _settings.config_path().exists(), str(_settings.config_path()))
     check("默认 base_url 指向通义", "dashscope" in cfg["base_url"], cfg["base_url"])
     check("key 状态可判断", isinstance(available(), bool), f"available={available()}")
 

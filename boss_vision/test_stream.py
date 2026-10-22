@@ -111,7 +111,7 @@ def test_collection_gate() -> None:
     check("缺公司名 -> 拦", not gate4["collect_ok"], gate4["collect_reason"])
 
     out = screening.screen_row(truncated, rules)
-    check("整体结论为「采集待复核」", out["最终结论"] == screening.COLLECT_REVIEW, out["最终结论"])
+    check("整体结论为「不合格」（二元口径）", out["最终结论"] == screening.REJECT, out["最终结论"])
     check("采集待复核时不做学历判断", out["教育结论"] == "—", str(out.get("教育结论")))
     check("采集待复核时不进模型评分", out.get("经历结论") == "—", str(out.get("经历结论")))
 

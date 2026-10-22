@@ -104,17 +104,19 @@ def test_new_hard_rules() -> None:
     check("经验不足 6 个月 -> 不合格", short["最终结论"] == screening.REJECT, short["最终结论"])
     check("原因含经验", "个月" in short["原因"], short["原因"])
 
+    # 二元口径：工作经历模型未接入时也只能是"不合格"，但原因不能是硬规则命中
     ok = screening.screen_row(row_of(年龄=25, **{"第1家起止": "2023.01-至今"}), rules)
-    check("25 岁 + 在职 -> 不淘汰", ok["最终结论"] != screening.REJECT, ok["最终结论"])
+    check("25 岁 + 在职 -> 硬规则不命中",
+          "年龄" not in ok["原因"] and "空档" not in ok["原因"], ok["原因"])
 
 
 def test_review_paths() -> None:
     print("\n[5] 待复核")
     bad = screening.evaluate_kb(row_of(需复核="是", 复核原因="姓名未识别"))
-    check("采集有问题 -> 待复核", bad["verdict"] == "待复核", bad["verdict"])
+    check("采集有问题 -> 不合格（二元口径）", bad["verdict"] == "不合适", bad["verdict"])
 
     unknown = screening.evaluate_kb(row_of(学历=""))
-    check("学历未知 -> 待复核", unknown["verdict"] == "待复核", unknown["verdict"])
+    check("学历未知 -> 不合格（二元口径）", unknown["verdict"] == "不合适", unknown["verdict"])
 
     ok = screening.evaluate_kb(row_of())
     check("全部合格 -> 交给工作证据层", ok["verdict"] == "", ok["verdict"])

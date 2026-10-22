@@ -69,10 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"最低学历要求：{rules['edu']['min_level']}；"
           f"学校必须在校名单内：{'是' if rules['edu']['require_listed_school'] else '否'}；"
           f"工作经历下限：{rules['work']['min_entries']} 段")
-    for verdict in ("合适", "不合格", "待复核"):
+    for verdict in ("合适", "不合适"):
         if counts.get(verdict):
             print(f"  {verdict}：{counts[verdict]} 条")
-    other = {k: v for k, v in counts.items() if k not in ("合适", "不合格", "待复核")}
+    other = {k: v for k, v in counts.items() if k not in ("合适", "不合适")}
     for k, v in other.items():
         print(f"  {k or '(空)'}：{v} 条")
 

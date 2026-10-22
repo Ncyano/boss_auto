@@ -67,18 +67,20 @@ def main(argv: list[str] | None = None) -> int:
             "采集完成": "是", "需复核": "否", "复核原因": "", "冲突数": 0,
         }
         row.update(split_history(r.get("全部工作经历", "")))
+        row["工作经历全文"] = r.get("工作经历全文", "")
+        row["全部工作经历"] = r.get("全部工作经历", "")
         out = screening.screen_row(row, rules)
         verdict = out["最终结论"]
         stats[verdict] = stats.get(verdict, 0) + 1
 
         actual = r.get("人事结论", "")
-        if verdict == "不合格":
+        if verdict == "不合适":
             if actual == "不合适":
                 tp += 1
             else:
                 fp += 1
                 wrong.append((r.get("姓名") or "(无名)", out["原因"]))
-        elif verdict != "合格":
+        elif verdict != "合适":
             review.append((r.get("姓名") or "(无名)", actual, out["原因"][:50]))
 
     print(f"知识库 v{kbdata.get('version')}  共 {len(rows)} 条")

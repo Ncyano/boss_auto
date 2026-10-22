@@ -46,9 +46,9 @@ DEFAULT_RULES = {
 
 # 结论常量
 PASS = "合适"
-REJECT = "不合格"
-REVIEW = "待复核"
-COLLECT_REVIEW = "采集待复核"      # 数据本身不可信，不能交给模型判断
+REJECT = "不合适"
+REVIEW = "不合适"      # 二元口径：不再有中间态
+COLLECT_REVIEW = "不合适"      # 二元口径：采集问题也按不合适收口
 
 
 def load_rules(path: Path | None = None) -> dict:
@@ -444,10 +444,43 @@ def evaluate_kb(row: dict, kb_data: dict | None = None) -> dict:
                 "education_status": "未知", "education_evidence": ""}
 
 
+def _judge_work(row: dict) -> dict | None:
+    """调用 DeepSeek 判工作经历；没有 key、没文本或失败时返回 None。"""
+    try:
+        import judge as _judge
+        if not _judge.available():
+            return None
+        text = (row.get("工作经历全文") or row.get("全部工作经历") or "").strip()
+        if not text:
+            parts = []
+            for i in range(1, 11):
+                company = (row.get(f"第{i}家公司") or "").strip()
+                title = (row.get(f"第{i}家职位") or "").strip()
+                period = (row.get(f"第{i}家起止") or "").strip()
+                if company or title:
+                    parts.append(f"{period} {company}/{title}")
+            text = "\n".join(parts)
+        if not text:
+            return None
+        import kb as _kb
+        res = _judge.judge(text, _kb.load())
+        ok = res["recommendation"] == "建议合适"
+        return {
+            "最终结论": PASS if ok else REJECT,
+            "原因": res.get("decision_basis", "")[:120],
+            "经历结论": "匹配" if ok else "不匹配",
+            "评分": "",
+        }
+    except Exception as exc:
+        return {"最终结论": REJECT, "原因": f"判断模型调用失败：{exc}"[:120],
+                "经历结论": "—", "评分": ""}
+
+
 def screen_row(row: dict, rules: dict, scorer=None) -> dict:
     """对一条候选人记录按顺序判定：采集质量 -> 学历 -> 工作经历门槛 -> 评分。"""
     gate = screen_collection(row, rules)
     if not gate["collect_ok"]:
+        # 二元口径：采集不全也要给出结论（按不合适收口，原因保留"采集中断"以便补采）
         return {
             "序号": row.get("序号", ""),
             "姓名": row.get("姓名", ""),
@@ -458,8 +491,8 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             "教育原因": "—",
             "学校匹配": row.get("学校", ""),
             "经历结论": "—",
-            "最终结论": COLLECT_REVIEW,
-            "原因": gate["collect_reason"],
+            "最终结论": REJECT,
+            "原因": f"采集不完整：{gate['collect_reason']}",
         }
 
     # 知识库硬规则（E01 学历 / E02 全日制 / W06 明确无经历）与待复核判定
@@ -478,21 +511,6 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             "最终结论": REJECT,
             "原因": kb_out["reason"],
         }
-    if kb_out["verdict"] == "待复核":
-        return {
-            "序号": row.get("序号", ""),
-            "姓名": row.get("姓名", ""),
-            "学校": row.get("学校", ""),
-            "学历": row.get("学历", ""),
-            "工作经历条数": row.get("工作经历条数", ""),
-            "教育结论": "待复核",
-            "教育原因": kb_out["reason"],
-            "学校匹配": row.get("学校", ""),
-            "经历结论": "—",
-            "最终结论": COLLECT_REVIEW,
-            "原因": kb_out["reason"],
-        }
-
     edu = screen_education(row, rules)
     out = {
         "序号": row.get("序号", ""),
@@ -510,7 +528,9 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
                     "原因": edu["edu_reason"]})
         return out
     if edu["edu_result"] == REVIEW:
-        out.update({"经历结论": "—", "最终结论": REVIEW, "原因": edu["edu_reason"]})
+        # 二元口径：学历字段核实不了也算不合适（原因保留，便于补采）
+        out.update({"经历结论": "—", "最终结论": REJECT,
+                    "原因": f"无法核实学历：{edu['edu_reason']}"})
         return out
 
     model_rules = rules.get("model", {})
@@ -523,8 +543,14 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
         out["最终结论"] = REJECT
         out["原因"] = f"{edu['edu_reason']}；{work['work_reason']}"
     elif work["work_result"] == "待评分":
-        out["最终结论"] = REVIEW
-        out["原因"] = f"{edu['edu_reason']}；{work['work_reason']}"
+        # 二元口径：学历通过后必须落到 合适/不合适
+        decided = _judge_work(row)
+        if decided:
+            out.update(decided)
+            out["原因"] = f"{edu['edu_reason']}；{decided['原因']}"
+        else:
+            out["最终结论"] = REJECT
+            out["原因"] = "未接入判断模型，无法确认工作经历匹配（默认按不合适）"
     else:
         out["最终结论"] = work["work_result"]
         out["原因"] = f"{edu['edu_reason']}；{work['work_reason']}"

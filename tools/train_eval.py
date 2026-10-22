@@ -84,14 +84,11 @@ def run_split(name: str, rows: list[dict], kb: dict, cfg: dict, shots: list[dict
             reason = "硬规则：" + "；".join(f["reason"] for f in kb_out["failures"])[:70]
             if actual != "不合适":
                 hard_wrong += 1
-        elif kb_out["verdict"] == "待复核":
-            pred, reason = "待复核", "规则待复核：" + kb_out["reason"][:60]
         else:
             try:
                 res = judge.judge(work_text(row), kb, cfg, shots=shots)
                 tokens += int((res.get("usage") or {}).get("total_tokens") or 0)
-                pred = {"建议合适": "合适", "不合适": "不合适",
-                        "待复核": "待复核"}[res["recommendation"]]
+                pred = "合适" if res["recommendation"] == "建议合适" else "不合适"
                 reason = res["decision_basis"][:70]
             except Exception as exc:
                 failed += 1
@@ -105,10 +102,10 @@ def run_split(name: str, rows: list[dict], kb: dict, cfg: dict, shots: list[dict
             tn += 1
         elif pred == "合适" and actual == "不合适":
             fn += 1
-        elif pred in ("待复核", "调用失败"):
+        elif pred == "调用失败":
             unsure += 1
 
-        mark = "✓" if pred == actual else ("?" if pred in ("待复核", "调用失败") else "✗")
+        mark = "✓" if pred == actual else ("?" if pred == "调用失败" else "✗")
         if log_each:
             print(f"    [{i}/{len(rows)}] {mark} {label:<8} 真实={actual or '—':<4} "
                   f"预测={pred:<5} {reason[:36]}")
