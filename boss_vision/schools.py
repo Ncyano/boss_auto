@@ -90,6 +90,17 @@ def lookup(name: str, fuzzy_min: float = 0.82) -> dict:
     if not key:
         return {"listed": False, "matched": "", "method": "none", "candidates": []}
 
+    # 名单里有「民办万博科技职业学院」这种带前缀的写法，去掉前缀再试
+    for prefix in ("民办", "公办", "省立"):
+        if key.startswith(prefix) and len(key) > len(prefix) + 3:
+            stripped_key = key[len(prefix):]
+            hit2 = records.get(stripped_key)
+            if hit2:
+                return {"listed": True, "matched": hit2["学校名称"],
+                        "province": hit2["所在省份"], "level": hit2["办学层次"],
+                        "list": hit2.get("_list", "general"), "method": "paren",
+                        "candidates": []}
+
     hit = records.get(key)
     if hit:
         return {"listed": True, "matched": hit["学校名称"], "province": hit["所在省份"],

@@ -293,7 +293,7 @@ def _last_job_gap_months(work: list[dict]) -> int | None:
     """最近一段工作结束到今天的月数；「至今」返回 0；解析不出返回 None。"""
     import re as _re
 
-    best = None
+    latest: int | None = None
     for w in work or []:
         period = (w.get("period") or "").replace(" ", "")
         if not period:
@@ -304,8 +304,10 @@ def _last_job_gap_months(work: list[dict]) -> int | None:
         if len(m) >= 2:
             year, month = m[-1]
             if month:
-                best = _months_between(int(year), int(month))
-    return best
+                gap = _months_between(int(year), int(month))
+                # 取所有经历里"最晚结束"的那段，列表顺序不可靠
+                latest = gap if latest is None else min(latest, gap)
+    return latest
 
 
 def screen_hr_rules(row: dict, rules: dict, work: list[dict] | None = None) -> dict:
