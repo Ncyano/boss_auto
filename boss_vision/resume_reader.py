@@ -649,7 +649,26 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         res.shots.append((step, crop.copy()))
 
         try:
-            raw = vlm.read_screen(crop, cfg, log=log)
+            pipeline = str(cfg.get("pipeline") or "vlm").lower()
+            if pipeline == "ocr":
+                # 快一倍：专用 OCR 读文字（~7s），再用文本模型结构化（~3s）
+                ocr_res = vlm.read_screen_text(crop, cfg, log=log)
+                otext = ocr_res.get("text") or ""
+                try:
+                    import judge as _judge
+                    st = _judge.structure_text(otext, _judge.load_config())
+                    sdata = st.get("data") or {}
+                    raw = {"name": (sdata.get("name") or "").strip(),
+                           "basic": sdata.get("basic") or {},
+                           "sections": sdata.get("sections") or [],
+                           "raw": otext,
+                           "usage": _merge_usage(ocr_res.get("usage"), st.get("usage"))}
+                except Exception as exc:
+                    log(f"  [warn] 结构化失败，改用 OCR 原文兜底：{exc}")
+                    raw = {"name": "", "basic": {}, "sections": [], "raw": otext,
+                           "usage": ocr_res.get("usage") or {}}
+            else:
+                raw = vlm.read_screen(crop, cfg, log=log)
         except Exception as exc:
             log(f"  [warn] 第 {step + 1} 屏读取失败：{exc}")
             res.stopped_reason = f"视觉模型调用失败（第 {step + 1} 屏）"

@@ -246,6 +246,57 @@ def judge(work_text: str, kb: dict | None = None, cfg: dict | None = None,
     raise RuntimeError(f"判断失败：{last}")
 
 
+# ---------------------------------------------------------------- 文本结构化
+
+STRUCTURE_PROMPT = """你是简历解析器。输入是一份简历截图 OCR 出来的纯文本（可能有排版错乱、字符残缺）。
+请把它解析成 JSON，**只输出 JSON**，不要解释。
+
+格式：
+{
+  "name": "姓名（顶部那个名字，没有就空）",
+  "basic": {"age": "数字", "education_mode": "全日制|非全日制|", "graduation_year": "四位年份", "status": "求职状态原文"},
+  "sections": [
+    {"section": "work", "company": "公司名", "title": "职位", "period": "2022.03-2025.11",
+     "responsibilities": ["职责原文，尽量完整"], "tags": []},
+    {"section": "education", "school": "学校", "major": "专业", "degree": "学历", "period": "2019-2023"}
+  ]
+}
+
+规则：
+1. section 只能是 work / education / project / campus / other
+2. company 只能是公司名，绝不能把职责、标签、行业写进去
+3. 职责按原文抄，不要改写、不要总结；截断的照原样保留
+4. OCR 里出现的"工作内容/工作描述"后面的条目都算该段经历的职责
+5. 分不清是工作还是项目时，按 work 处理
+6. 不要编造文本里没有的内容
+"""
+
+
+def structure_text(text: str, cfg: dict | None = None, kb: dict | None = None) -> dict:
+    """把 OCR 出来的纯文本解析成结构化简历（用文本模型，约 1~2 秒）。"""
+    cfg = cfg or load_config()
+    key = cfg.get("api_key") or api_key(cfg)
+    if not key:
+        raise RuntimeError("没有配置 DEEPSEEK_API_KEY")
+
+    messages = [{"role": "system", "content": STRUCTURE_PROMPT},
+                {"role": "user", "content": text[:8000]}]
+    last = ""
+    for attempt in range(int(cfg.get("retries", 2)) + 1):
+        try:
+            resp = _post(cfg, messages, key)
+            raw = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "")
+            data = extract_json(raw)
+            if data and (data.get("sections") is not None or data.get("name")):
+                return {"data": data, "usage": resp.get("usage") or {}}
+            last = "输出不是合法 JSON"
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
+        if attempt < int(cfg.get("retries", 2)):
+            import time as _t
+            _t.sleep(1.0)
+    raise RuntimeError(f"结构化失败：{last}")
+
 def summarize(result: dict) -> str:
     """一行摘要，便于日志。"""
     hits = [r["rule_id"] for r in result.get("rule_results", [])

@@ -102,7 +102,7 @@ def test_education_continue() -> None:
 
     cfg = vlm.load_config()
     cfg.update({"base_url": f"http://127.0.0.1:{port}", "api_key": "t", "retries": 0,
-                "model": "fake"})
+                "model": "fake", "pipeline": "vlm"})
 
     state = {"i": 0}
     frames = []

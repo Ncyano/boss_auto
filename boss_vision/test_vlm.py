@@ -94,7 +94,7 @@ def main() -> int:
     print(f"假端点已启动: http://127.0.0.1:{port}\n")
 
     cfg = vlm.load_config()
-    cfg.update({"base_url": f"http://127.0.0.1:{port}", "model": "fake-vl",
+    cfg.update({"pipeline": "vlm", "base_url": f"http://127.0.0.1:{port}", "model": "fake-vl",
                 "api_key": "test-key", "retries": 0})
 
     # 直接测 read_screen

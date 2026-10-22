@@ -503,6 +503,52 @@ def read_name_consensus(img, band, cfg: dict | None = None, log=print) -> tuple[
         log(f"  [warn] 姓名候选不一致：{score}，采用 {best}")
     return best, raw_all
 
+# ---------------------------------------------------------------- OCR 模式（快）
+
+# 注意：多写"逐行/坐标/JSON"这类词会让 OCR 模型改吐坐标框，保持这句原文最稳
+OCR_PROMPT = "读取图中所有文字，按阅读顺序输出，不要解释、不要总结。"
+OCR_DEFAULT_MODEL = "qwen-vl-ocr"
+
+
+def ocr_model(cfg: dict | None = None) -> str:
+    cfg = cfg or load_config()
+    return cfg.get("ocr_model") or OCR_DEFAULT_MODEL
+
+
+def read_screen_text(crop, cfg: dict | None = None, log=print) -> dict:
+    """用专用 OCR 模型读一屏，返回纯文本（比通用视觉模型快一倍）。"""
+    cfg = cfg or load_config()
+    key = api_key(cfg)
+    if not key:
+        raise RuntimeError("没有配置视觉模型 API key")
+
+    data_uri = encode_image(crop, int(cfg.get("max_image_side", 1024)))
+    payload = {
+        "model": ocr_model(cfg),
+        "temperature": 0,
+        "max_tokens": int(cfg.get("ocr_max_tokens", 2000)),
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": OCR_PROMPT},
+            {"type": "image_url", "image_url": {"url": data_uri}},
+        ]}],
+    }
+
+    last = ""
+    for attempt in range(int(cfg.get("retries", 2)) + 1):
+        try:
+            resp = _post(cfg, payload, key)
+            text = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "")
+            if text and text.strip():
+                return {"text": text.strip(), "usage": resp.get("usage") or {},
+                        "model": ocr_model(cfg)}
+            last = "输出为空"
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
+        if attempt < int(cfg.get("retries", 2)):
+            import time as _t
+            _t.sleep(1.0)
+    raise RuntimeError(f"OCR 读取失败：{last}")
+
 def name_consensus_detail(img, band, cfg: dict | None = None, log=print) -> dict:
     """读姓名并返回候选明细：{"name":..., "candidates":[{value, source, weight}], "disputed":bool}"""
     name, votes = read_name_consensus(img, band, cfg, log=log)
