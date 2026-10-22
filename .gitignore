@@ -39,3 +39,7 @@ data/vlm-config.json
 data/hr-resumes-采集格式.csv
 data/hr-labels.csv
 boss_vision/runs/hr-shots/
+
+# 知识库（含人事判定与候选人线索，不入公共仓库）
+运营助理知识库_v0.1/
+运营助理知识库_v0.1.bak/

@@ -1,0 +1,322 @@
+"""运营助理知识库加载与执行。
+
+以 `运营助理知识库_v0.1/rules.json` 为准，规则状态决定怎么用：
+
+    enabled / confirmed_by_user          可执行（硬规则：命中即不合适）
+    confirmed_policy_pending_reference   政策已确认但依据未接入 -> 只能判"待复核"
+    draft_from_hr                        工作证据（交给模型逐条取证，不单独淘汰）
+    disabled_pending_confirmation        阈值待确认 -> 只提示，不得淘汰
+    excluded                             完全不作判定依据（年龄/性格/人事标签）
+
+关键约束（来自知识库）：
+    · 年龄不能作为筛选特征（X01）
+    · 空档期、同行、在校实习、半年经验都是"待确认"，只能提示（P01–P04）
+    · 未命中学校名单 ≠ 学历造假，只能待复核（E03）
+    · 未提及 ≠ 不存在；无法判断 ≠ 不满足（W05）
+"""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+KB_DIR = ROOT / "运营助理知识库_v0.1"
+
+HARD_STATUSES = {"enabled", "confirmed_by_user"}
+PENDING_REF_STATUSES = {"confirmed_policy_pending_reference"}
+DRAFT_STATUSES = {"draft_from_hr"}
+DISABLED_STATUSES = {"disabled_pending_confirmation"}
+EXCLUDED_STATUSES = {"excluded"}
+SUPERSEDED_STATUSES = {"superseded"}
+
+DEGREE_ORDER = {"初中及以下": 0, "高中": 1, "中专": 1, "中技": 1, "中专/中技": 1,
+                "大专": 2, "专科": 2, "本科": 3, "硕士": 4, "研究生": 4, "博士": 5}
+
+
+def load(kb_dir: Path | None = None) -> dict:
+    folder = kb_dir or KB_DIR
+    path = folder / "rules.json"
+    if not path.exists():
+        raise FileNotFoundError(f"找不到知识库：{path}")
+    kb = json.loads(path.read_text(encoding="utf-8"))
+    kb["_dir"] = str(folder)
+    kb["_rules"] = {r["id"]: r for r in kb.get("rules", [])}
+    return kb
+
+
+def rule_status(kb: dict, rule_id: str) -> str:
+    return (kb["_rules"].get(rule_id) or {}).get("status", "")
+
+
+def rule_kind(kb: dict, rule_id: str) -> str:
+    """把状态映射成使用方式。"""
+    st = rule_status(kb, rule_id)
+    if st in HARD_STATUSES:
+        return "hard"
+    if st in PENDING_REF_STATUSES:
+        return "review"
+    if st in DRAFT_STATUSES:
+        return "evidence"
+    if st in DISABLED_STATUSES:
+        return "advisory"
+    if st in EXCLUDED_STATUSES:
+        return "excluded"
+    if st in SUPERSEDED_STATUSES:
+        return "superseded"
+    return "unknown"
+
+
+def enabled_work_rules(kb: dict) -> list[dict]:
+    """W01–W05 这类工作证据规则（交给模型逐条取证）。"""
+    return [r for r in kb.get("rules", []) if rule_kind(kb, r["id"]) == "evidence"]
+
+
+def params_of(kb: dict, rule_id: str) -> dict:
+    return (kb["_rules"].get(rule_id) or {}).get("params") or {}
+
+
+def hard_rejections(kb: dict) -> list[str]:
+    """当前所有会直接判死的规则编号（便于日志与文档）。"""
+    return [r["id"] for r in kb.get("rules", [])
+            if rule_kind(kb, r["id"]) in ("hard", "review") and r.get("kind") == "hard"]
+
+
+def degree_level(text: str) -> int:
+    t = (text or "").strip()
+    for key in ("博士", "硕士", "研究生", "本科", "大专", "专科", "中专", "中技", "高中", "初中"):
+        if key in t:
+            return DEGREE_ORDER.get(key, 0)
+    return -1
+
+
+def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
+    """按知识库执行硬规则，返回判定与全部提示。
+
+    resume 需要的字段：
+        education: [{school, major, degree, period, mode?}]
+        work:      [{company, title, period, descriptions}]
+        collection: {opened, complete, conflicts, needs_review}
+        basic:     {age, education_mode, status}
+    """
+    kb = kb or load()
+    education = resume.get("education") or []
+    work = resume.get("work") or []
+    collection = resume.get("collection") or {}
+    basic = resume.get("basic") or {}
+
+    failures: list[dict] = []      # 判死
+    reviews: list[str] = []        # 待复核
+    advisories: list[str] = []     # 只提示
+    exclusions: list[str] = []     # 按知识库不得使用，仅记录
+
+    # ---------- Q01 采集质量 ----------
+    if collection.get("needs_review") or collection.get("conflicts"):
+        reviews.append("采集待复核：" + "；".join(
+            collection.get("review_reason") or [f"{len(collection.get('conflicts') or [])} 处冲突"]))
+
+    # ---------- 教育 ----------
+    first = education[0] if education else None
+    if first is None:
+        reviews.append("未读到教育经历，无法核对学历硬规则")
+        education_status = "未知"
+        education_evidence = ""
+    else:
+        degree_text = (first.get("degree") or "").strip()
+        level = degree_level(degree_text)
+        education_evidence = json.dumps(
+            {"school": first.get("school"), "degree": degree_text,
+             "period": first.get("period")}, ensure_ascii=False)
+
+        if level < 0:
+            reviews.append("第一段教育学历层次未识别（P05：多段学历口径未确认）")
+            education_status = "未知"
+        elif level < DEGREE_ORDER["大专"]:
+            education_status = "不通过"
+            failures.append({"rule": "E01", "reason": f"学历为{degree_text}，低于大专",
+                             "evidence": education_evidence})
+        else:
+            education_status = "通过"
+
+        # E02 非全日制
+        mode = (first.get("mode") or basic.get("education_mode") or "").strip()
+        if "非全日制" in mode:
+            education_status = "不通过"
+            failures.append({"rule": "E02", "reason": "学历为非全日制", "evidence": education_evidence})
+
+        # E03 学校名单：政策已确认，但依据未接入 -> 未命中只能待复核
+        school = (first.get("school") or "").strip()
+        if schools_lookup is not None and school and education_status == "通过":
+            try:
+                hit = schools_lookup(school)
+                if not hit.get("listed"):
+                    reviews.append(f"校名 {school} 未命中指定名单，需人工核对（E03）")
+            except Exception:
+                pass
+
+    # ---------- W06 明确没有工作经历 ----------
+    if not work and not collection.get("needs_review"):
+        count = collection.get("work_count")
+        try:
+            count_int = int(count) if count not in (None, "") else None
+        except (TypeError, ValueError):
+            count_int = None
+        if count_int is not None and count_int > 0:
+            # 简历说有 N 段经历，但我们没拿到明细 -> 采集不全，不是"没有经历"
+            reviews.append(f"简历标注 {count_int} 段工作经历，但未取到明细")
+        elif collection.get("complete") or count_int == 0:
+            failures.append({"rule": "W06", "reason": "确认无工作经历",
+                             "evidence": "简历完整读取，工作经历为空"})
+
+    # ---------- v0.2.0：年龄 / 空档 / 同行 / 应届 / 经验 都是硬性不合适 ----------
+    age = basic.get("age")
+    age_max = params_of(kb, "A01").get("max_age", 30)
+    if age:
+        try:
+            age_int = int(age)
+        except (TypeError, ValueError):
+            age_int = 0
+        if age_int > int(age_max):
+            failures.append({"rule": "A01", "reason": f"年龄 {age_int} 超过上限 {age_max}",
+                             "evidence": f"简历年龄：{age_int}"})
+        else:
+            advisories.append(f"年龄 {age_int}（未超上限 {age_max}）")
+    else:
+        reviews.append("年龄未识别，无法执行 A01 年龄上限（未知不等于通过）")
+
+    gap = resume.get("gap_months")
+    gap_max = params_of(kb, "P02").get("max_gap_months", 6)
+    if gap is not None:
+        if gap > int(gap_max):
+            failures.append({"rule": "P02", "reason": f"最近空档 {gap} 个月，超过 {gap_max} 个月",
+                             "evidence": f"最近一段工作结束至今 {gap} 个月"})
+        else:
+            advisories.append(f"最近空档 {gap} 个月（上限 {gap_max}）")
+
+    peers = params_of(kb, "P03").get("blacklist") or []
+    for i in range(1, 11):
+        company = resume.get(f"company_{i}") or ""
+        hit = next((k for k in peers if k and k in company), "")
+        if hit:
+            failures.append({"rule": "P03", "reason": f"同行公司（{hit}）：{company}",
+                             "evidence": company})
+            break
+
+    status_text = (basic.get("status") or "")
+    fresh_keys = params_of(kb, "P04").get("keywords") or ["在校", "应届", "实习"]
+    hit_word = next((k for k in fresh_keys if k in status_text), "")
+    if hit_word:
+        failures.append({"rule": "P04", "reason": f"求职状态含「{hit_word}」（{status_text}）",
+                         "evidence": status_text})
+
+    months = resume.get("total_work_months")
+    min_months = params_of(kb, "P01").get("min_months", 6)
+    if months is not None:
+        if months < int(min_months):
+            failures.append({"rule": "P01", "reason": f"累计相关工作 {months} 个月，不足 {min_months} 个月",
+                             "evidence": f"累计工作月数 {months}"})
+        else:
+            advisories.append(f"累计工作 {months} 个月（门槛 {min_months}）")
+
+    # ---------- 结论 ----------
+    if failures:
+        verdict = "不合适"
+    elif reviews:
+        verdict = "待复核"
+    elif education_status == "通过":
+        verdict = ""          # 交给工作证据模型（W01–W05）
+    else:
+        verdict = "待复核"
+
+    return {
+        "verdict": verdict,
+        "education_status": education_status,
+        "education_evidence": education_evidence,
+        "failures": failures,
+        "reviews": reviews,
+        "advisories": advisories,
+        "exclusions": exclusions,
+        "kb_version": kb.get("version", ""),
+        "reason": "；".join([f["reason"] for f in failures] + reviews),
+    }
+
+
+def self_test() -> int:
+    kb = load()
+    ok = fail = 0
+
+    def check(name, cond, detail=""):
+        nonlocal ok, fail
+        if cond:
+            ok += 1
+            print(f"  [PASS] {name}" + (f" — {detail}" if detail else ""))
+        else:
+            fail += 1
+            print(f"  [FAIL] {name}" + (f" — {detail}" if detail else ""))
+
+    print(f"[1] 加载知识库 v{kb.get('version')}，{len(kb.get('rules', []))} 条规则")
+    check("E01 是硬规则", rule_kind(kb, "E01") == "hard")
+    check("E02 是硬规则", rule_kind(kb, "E02") == "hard")
+    check("W06 是硬规则", rule_kind(kb, "W06") == "hard")
+    check("W01 是取证规则", rule_kind(kb, "W01") == "evidence")
+    for rid in ("P01", "P02", "P03", "P04", "A01"):
+        check(f"{rid} 硬规则（v0.2）", rule_kind(kb, rid) == "hard")
+    check("X01 已被 A01 取代", rule_kind(kb, "X01") == "superseded")
+    check("E03 只能待复核", rule_kind(kb, "E03") == "review")
+
+    print("\n[2] 判定")
+    base = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2020-2024"}],
+            "work": [{"company": "甲公司", "title": "客服", "period": "2024.01-至今"}],
+            "collection": {"complete": True, "needs_review": False},
+            "basic": {"age": 25}, "gap_months": 0, "total_work_months": 20,
+            "company_1": "甲公司"}
+
+    out = evaluate(dict(base), kb)
+    check("正常画像留给工作模型", out["verdict"] == "", out["verdict"])
+
+    aged = evaluate({**base, "basic": {"age": 35}}, kb)
+    check("35 岁 -> 不合适（A01）", aged["verdict"] == "不合适", aged["verdict"])
+    check("命中 A01", any(f["rule"] == "A01" for f in aged["failures"]), str(aged["failures"]))
+
+    low = evaluate({**base, "education": [{"school": "某中职", "degree": "中专"}]}, kb)
+    check("中专 -> 不合适", low["verdict"] == "不合适", low["verdict"])
+    check("命中 E01", any(f["rule"] == "E01" for f in low["failures"]))
+
+    part = evaluate({**base, "education": [{"school": "某学院", "degree": "本科",
+                                            "mode": "非全日制"}]}, kb)
+    check("非全日制 -> 不合适", part["verdict"] == "不合适", part["verdict"])
+    check("命中 E02", any(f["rule"] == "E02" for f in part["failures"]))
+
+    none_work = evaluate({**base, "work": []}, kb)
+    check("确认无经历 -> 不合适", none_work["verdict"] == "不合适", none_work["verdict"])
+    check("命中 W06", any(f["rule"] == "W06" for f in none_work["failures"]))
+
+    review = evaluate({**base, "collection": {"complete": False, "needs_review": True,
+                                              "review_reason": ["姓名未识别"]}}, kb)
+    check("采集有问题 -> 待复核", review["verdict"] == "待复核", review["verdict"])
+
+    gap = evaluate({**base, "gap_months": 20}, kb)
+    check("空档超 6 个月 -> 不合适（P02）", gap["verdict"] == "不合适", gap["verdict"])
+    check("命中 P02", any(f["rule"] == "P02" for f in gap["failures"]))
+
+    peer = evaluate({**base, "company_1": "福州一硕网络科技有限公司"}, kb)
+    check("同行 -> 不合适（P03）", peer["verdict"] == "不合适", peer["verdict"])
+    check("命中 P03", any(f["rule"] == "P03" for f in peer["failures"]))
+
+    fresh = evaluate({**base, "basic": {"age": 25, "status": "应届生"}}, kb)
+    check("应届 -> 不合适（P04）", fresh["verdict"] == "不合适", fresh["verdict"])
+    check("命中 P04", any(f["rule"] == "P04" for f in fresh["failures"]))
+
+    short = evaluate({**base, "total_work_months": 3}, kb)
+    check("经验不足 6 个月 -> 不合适（P01）", short["verdict"] == "不合适", short["verdict"])
+    check("命中 P01", any(f["rule"] == "P01" for f in short["failures"]))
+
+    noage = evaluate({**base, "basic": {}}, kb)
+    check("年龄未知 -> 待复核", noage["verdict"] == "待复核", noage["verdict"])
+
+    print(f"\n{ok}/{ok + fail} 通过")
+    return 0 if fail == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(self_test())

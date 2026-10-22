@@ -311,49 +311,137 @@ def _last_job_gap_months(work: list[dict]) -> int | None:
 
 
 def screen_hr_rules(row: dict, rules: dict, work: list[dict] | None = None) -> dict:
-    """按人事的口径判硬条件：年龄 / 全日制 / 应届 / 空档期 / 同行。"""
-    hr = rules.get("hr") if isinstance(rules.get("hr"), dict) else HR_RULES_DEFAULT
-    problems: list[str] = []
+    """按人事表口径做的"提示项"。
 
-    # 年龄
+    注意：这些条件在知识库里分别是 P01（经验）/P02（空档）/P03（同行）/P04（在校实习）
+    和 X01（年龄），状态是"待确认"或"已排除"，**不得用于淘汰**。
+    这里只返回提示文案，是否淘汰由 kb.evaluate 决定。
+    """
+    advisories: list[str] = []
+
     try:
         age = int(row.get("年龄") or 0)
     except (TypeError, ValueError):
         age = 0
-    limit = hr.get("年龄", {}).get("上限")
-    if age and limit and age > int(limit):
-        problems.append(f"年龄 {age} 超过上限 {limit}")
+    if age:
+        advisories.append(f"年龄 {age}（X01：不作为筛选特征）")
 
-    # 学历性质
     mode = (row.get("学历性质") or "").strip()
-    if hr.get("学历", {}).get("要求全日制") and mode == "非全日制":
-        problems.append("学历非全日制")
+    if "非全日制" in mode:
+        advisories.append("学历非全日制（E02：属于硬规则，由 kb 判定）")
 
-    # 应届/实习
     status = (row.get("求职状态") or "").strip()
-    for word in hr.get("经验", {}).get("排除", []):
-        if word and word in status:
-            problems.append(f"求职状态含「{word}」")
+    if status and any(k in status for k in ("应届", "在校", "实习")):
+        advisories.append(f"求职状态「{status}」（P04 待确认，仅提示）")
 
-    # 空档期
-    max_gap = hr.get("空档期", {}).get("最长月数")
     if work is None:
-        work = []
-        for i in range(1, 11):
-            period = row.get(f"第{i}家起止")
-            if period:
-                work.append({"period": period})
+        work = [{"period": row.get(f"第{i}家起止")} for i in range(1, 11)
+                if row.get(f"第{i}家起止")]
     gap = _last_job_gap_months(work)
-    if max_gap is not None and gap is not None and gap > int(max_gap):
-        problems.append(f"最近空档 {gap} 个月（上限 {max_gap}）")
+    if gap is not None and gap > 6:
+        advisories.append(f"最近空档 {gap} 个月（P02 待确认，仅提示）")
 
-    # 同行
     text = " ".join((row.get(f"第{i}家公司") or "") for i in range(1, 11))
-    for kw in hr.get("同行", {}).get("黑名单", []):
-        if kw and kw in text:
-            problems.append(f"同行公司（{kw}）")
+    for kw in ("一硕", "一数", "云上源", "谷一科技"):
+        if kw in text:
+            advisories.append(f"疑似同行 {kw}（P03 待确认，需核实）")
 
-    return {"hr_ok": not problems, "hr_reason": "；".join(problems)}
+    return {"hr_ok": True, "hr_reason": "", "advisories": advisories}
+
+
+def _total_work_months(work: list[dict]) -> int | None:
+    """累计工作月数（重叠部分按最早开始到最晚结束粗算，避免重复计数）。"""
+    import re as _re
+
+    spans = []
+    for w in work or []:
+        period = (w.get("period") or "").replace(" ", "")
+        if not period:
+            continue
+        parts = _re.findall(r"(\d{4})[.\-/年]?(\d{1,2})?", period)
+        starts = [p for p in parts if p[0]]
+        if not starts:
+            continue
+        y0, m0 = starts[0]
+        start = int(y0) * 12 + (int(m0) if m0 else 1)
+        if "至今" in period or "现在" in period:
+            import datetime as _dt
+            now = _dt.date.today()
+            end = now.year * 12 + now.month
+        elif len(starts) >= 2:
+            y1, m1 = starts[-1]
+            end = int(y1) * 12 + (int(m1) if m1 else 1)
+        else:
+            end = start
+        if end >= start:
+            spans.append((start, end))
+    if not spans:
+        return None
+    spans.sort()
+    merged = [list(spans[0])]
+    for s0, e0 in spans[1:]:
+        if s0 <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e0)
+        else:
+            merged.append([s0, e0])
+    return sum(e0 - s0 for s0, e0 in merged)
+
+def resume_from_row(row: dict) -> dict:
+    """把一行 CSV 还原成 kb.evaluate 需要的简历结构。"""
+    education = []
+    school = (row.get("学校") or "").strip()
+    degree = (row.get("学历") or "").strip()
+    if school or degree:
+        education.append({
+            "school": school, "major": (row.get("专业") or "").strip(),
+            "degree": degree, "mode": (row.get("学历性质") or "").strip(),
+            "period": (row.get("教育起止") or "").strip(),
+        })
+
+    work = []
+    for i in range(1, 11):
+        company = (row.get(f"第{i}家公司") or "").strip()
+        title = (row.get(f"第{i}家职位") or "").strip()
+        period = (row.get(f"第{i}家起止") or "").strip()
+        if company or period:
+            work.append({"company": company, "title": title, "period": period,
+                         "descriptions": []})
+
+    reasons = [x for x in (row.get("复核原因") or "").split("；") if x]
+    return {
+        "education": education,
+        "work": work,
+        "collection": {
+            "complete": (row.get("采集完成") or "") == "是",
+            "work_count": row.get("工作经历条数"),
+            "needs_review": (row.get("需复核") or "") == "是",
+            "conflicts": [1] * int(row.get("冲突数") or 0),
+            "review_reason": reasons,
+        },
+        "basic": {"age": row.get("年龄"), "education_mode": (row.get("学历性质") or ""),
+                  "status": (row.get("求职状态") or "")},
+        "gap_months": _last_job_gap_months(work),
+        "total_work_months": _total_work_months(work),
+        "company_1": (row.get("第1家公司") or ""),
+    }
+
+
+def evaluate_kb(row: dict, kb_data: dict | None = None) -> dict:
+    """用知识库判硬规则与待复核。"""
+    try:
+        import kb as _kb
+        data = kb_data or _kb.load()
+        lookup = None
+        try:
+            import schools as _schools
+            lookup = _schools.lookup
+        except Exception:
+            lookup = None
+        return _kb.evaluate(resume_from_row(row), data, schools_lookup=lookup)
+    except Exception as exc:
+        return {"verdict": "", "reason": f"知识库不可用：{exc}", "failures": [],
+                "reviews": [], "advisories": [], "exclusions": [],
+                "education_status": "未知", "education_evidence": ""}
 
 
 def screen_row(row: dict, rules: dict, scorer=None) -> dict:
@@ -374,21 +462,35 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             "原因": gate["collect_reason"],
         }
 
-    # 人事的硬条件（年龄 / 全日制 / 应届 / 空档期 / 同行）先过一遍
-    hr = screen_hr_rules(row, rules)
-    if not hr["hr_ok"]:
+    # 知识库硬规则（E01 学历 / E02 全日制 / W06 明确无经历）与待复核判定
+    kb_out = evaluate_kb(row)
+    if kb_out["verdict"] == "不合适":
         return {
             "序号": row.get("序号", ""),
             "姓名": row.get("姓名", ""),
             "学校": row.get("学校", ""),
             "学历": row.get("学历", ""),
             "工作经历条数": row.get("工作经历条数", ""),
-            "教育结论": "—",
-            "教育原因": "—",
+            "教育结论": "不通过",
+            "教育原因": kb_out["reason"],
             "学校匹配": row.get("学校", ""),
             "经历结论": "—",
             "最终结论": REJECT,
-            "原因": hr["hr_reason"],
+            "原因": kb_out["reason"],
+        }
+    if kb_out["verdict"] == "待复核":
+        return {
+            "序号": row.get("序号", ""),
+            "姓名": row.get("姓名", ""),
+            "学校": row.get("学校", ""),
+            "学历": row.get("学历", ""),
+            "工作经历条数": row.get("工作经历条数", ""),
+            "教育结论": "待复核",
+            "教育原因": kb_out["reason"],
+            "学校匹配": row.get("学校", ""),
+            "经历结论": "—",
+            "最终结论": COLLECT_REVIEW,
+            "原因": kb_out["reason"],
         }
 
     edu = screen_education(row, rules)

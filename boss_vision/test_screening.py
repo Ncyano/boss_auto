@@ -24,7 +24,10 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 def row(**kw) -> dict:
-    base = {"序号": 1, "姓名": "测试", "学校": "", "学历": "", "工作经历条数": 0}
+    # 默认给一个可通过 v0.2 硬规则的画像：25 岁、全日制、非应届、近期在职
+    base = {"序号": 1, "姓名": "测试", "学校": "", "学历": "", "工作经历条数": 0,
+            "年龄": 25, "学历性质": "全日制", "求职状态": "离职-随时到岗",
+            "采集完成": "是", "需复核": "否", "复核原因": "", "冲突数": 0}
     base.update(kw)
     return base
 
@@ -73,9 +76,14 @@ def main() -> int:
     check("未接模型 -> 待评分", pending["work_result"] == "待评分", pending["work_reason"])
 
     print("\n[4] 整体判定顺序")
+    # 知识库 E03：校名未命中指定名单 ≠ 学历造假，只能判"待复核"（未命中与确定不存在必须区分）
     r1 = screening.screen_row(row(学校="某某学院", 学历="本科", 工作经历条数=3), rules)
-    check("学校先拦（不进入经历判定）", r1["最终结论"] == screening.REJECT
+    check("校名未命中 -> 待复核", r1["最终结论"] == screening.COLLECT_REVIEW
           and r1["经历结论"] == "—", r1["原因"])
+
+    # 学历层次低于大专才由 E01 直接判死
+    r0 = screening.screen_row(row(学校="厦门大学", 学历="中专", 工作经历条数=3), rules)
+    check("中专直接判死", r0["最终结论"] == screening.REJECT, r0["原因"])
 
     r2 = screening.screen_row(row(学校="厦门大学", 学历="本科", 工作经历条数=0), rules)
     check("学历通过但无经历 -> 不合格", r2["最终结论"] == screening.REJECT, r2["原因"])
