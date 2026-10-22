@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "data" / "llm-config.json"
 
 DEFAULT_CONFIG = {
-    "_说明": "工作经历证据匹配用的文本模型。key 放环境变量 DEEPSEEK_API_KEY，或填 api_key。",
     "provider": "deepseek",
     "base_url": "https://api.deepseek.com",
     "model": "deepseek-flash",
@@ -32,8 +31,33 @@ DEFAULT_CONFIG = {
     "temperature": 0,
     "max_tokens": 2000,
     "timeout": 120,
-    "retries": 2,
+    "retries": 3,
+    "thinking": "disabled",
 }
+
+
+def load_config(create: bool = True) -> dict:
+    """判断模型配置：统一从 config.json 的 judge 段读取。"""
+    try:
+        import settings
+        return dict(settings.section("judge"))
+    except Exception as exc:
+        print(f"[warn] 读取统一配置失败，使用内置默认值：{exc}")
+        return dict(DEFAULT_CONFIG)
+
+
+def api_key(cfg: dict | None = None) -> str:
+    try:
+        import settings
+        return settings.api_key("judge")
+    except Exception:
+        cfg = cfg or load_config()
+        return os.environ.get(cfg.get("api_key_env", "DEEPSEEK_API_KEY"), "") or cfg.get("api_key", "")
+
+
+def available() -> bool:
+    return bool(api_key())
+
 
 SYSTEM_PROMPT = """你是运营助理岗位的简历证据抽取与匹配助手。
 
@@ -74,26 +98,6 @@ SYSTEM_PROMPT = """你是运营助理岗位的简历证据抽取与匹配助手�
 """
 
 
-def load_config(create: bool = True) -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    if CONFIG.exists():
-        try:
-            cfg.update({k: v for k, v in json.loads(CONFIG.read_text(encoding="utf-8")).items()
-                        if not k.startswith("_")})
-        except Exception as exc:
-            print(f"[warn] llm-config.json 读取失败：{exc}")
-    elif create:
-        CONFIG.parent.mkdir(exist_ok=True)
-        CONFIG.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
-    return cfg
-
-
-def api_key(cfg: dict) -> str:
-    return os.environ.get(cfg.get("api_key_env", "DEEPSEEK_API_KEY"), "") or cfg.get("api_key", "")
-
-
-def available() -> bool:
-    return bool(api_key(load_config()))
 
 
 def _post(cfg: dict, messages: list[dict], key: str) -> dict:
@@ -104,7 +108,7 @@ def _post(cfg: dict, messages: list[dict], key: str) -> dict:
         "max_tokens": cfg.get("max_tokens", 2000),
         "response_format": {"type": "json_object"},
         # deepseek 默认开启思考模式；分类任务不需要思维链，关掉更快更稳（且思考模式下 temperature 不生效）
-        "thinking": {"type": "disabled"},
+        "thinking": {"type": str(cfg.get("thinking", "disabled"))},
         "messages": messages,
     }
     req = urllib.request.Request(

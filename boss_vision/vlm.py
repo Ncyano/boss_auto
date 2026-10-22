@@ -29,18 +29,41 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "data" / "vlm-config.json"
 
 DEFAULT_CONFIG = {
-    "_说明": "视觉模型读取简历。把 api_key 放进环境变量 VLM_API_KEY，或填在这里（不要提交到仓库）。",
     "provider": "qwen",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen-vl-max",
+    "model": "qwen3-vl-plus",
     "api_key_env": "VLM_API_KEY",
     "api_key": "",
     "temperature": 0,
     "max_tokens": 2000,
-    "timeout": 90,
+    "timeout": 120,
     "retries": 2,
-    "max_image_side": 1600,
+    "max_image_side": 1024,
 }
+
+
+def load_config(create: bool = True) -> dict:
+    """视觉模型配置：统一从 config.json 的 vision 段读取。"""
+    try:
+        import settings
+        return dict(settings.section("vision"))
+    except Exception as exc:
+        print(f"[warn] 读取统一配置失败，使用内置默认值：{exc}")
+        return dict(DEFAULT_CONFIG)
+
+
+def api_key(cfg: dict | None = None) -> str:
+    cfg = cfg or load_config()
+    try:
+        import settings
+        return settings.api_key("vision")
+    except Exception:
+        return os.environ.get(cfg.get("api_key_env", "VLM_API_KEY"), "") or cfg.get("api_key", "")
+
+
+def available() -> bool:
+    return bool(api_key())
+
 
 PROMPT = """你是简历信息抽取器。图片是 BOSS 直聘「线上简历」弹窗的一屏截图（可能只截到某段经历的一部分）。
 
@@ -71,30 +94,7 @@ PROMPT = """你是简历信息抽取器。图片是 BOSS 直聘「线上简历�
 """
 
 
-# ---------------------------------------------------------------- 配置
-
-def load_config(create: bool = True) -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    if CONFIG.exists():
-        try:
-            cfg.update({k: v for k, v in json.loads(CONFIG.read_text(encoding="utf-8")).items()
-                        if not k.startswith("_")})
-        except Exception as exc:
-            print(f"[warn] vlm-config.json 读取失败：{exc}")
-    elif create:
-        CONFIG.parent.mkdir(exist_ok=True)
-        CONFIG.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
-    return cfg
-
-
-def api_key(cfg: dict) -> str:
-    return os.environ.get(cfg.get("api_key_env", "VLM_API_KEY"), "") or cfg.get("api_key", "")
-
-
-def available() -> bool:
-    """有没有可用的 key（没 key 就回退 OCR）。"""
-    return bool(api_key(load_config()))
-
+# ---------------------------------------------------------------- 配置（见 settings.py）
 
 # ---------------------------------------------------------------- 图像
 
