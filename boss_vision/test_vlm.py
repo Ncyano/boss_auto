@@ -66,10 +66,14 @@ class Handler(BaseHTTPRequestHandler):
                              for c in (body.get("messages") or [{}])[0].get("content", [])),
             "auth": bool(self.headers.get("Authorization")),
         })
-        payload = SCREENS[min(Handler.call, len(SCREENS) - 1)]
-        Handler.call += 1
+        # 姓名专用请求（max_tokens 很小）返回纯姓名，模拟真实端点的行为
+        if int(body.get("max_tokens") or 0) <= 60:
+            content = "测试候选人"          # 姓名请求：不推进屏序
+        else:
+            content = json.dumps(SCREENS[min(Handler.call, len(SCREENS) - 1)], ensure_ascii=False)
+            Handler.call += 1
         resp = {
-            "choices": [{"message": {"content": json.dumps(payload, ensure_ascii=False)}}],
+            "choices": [{"message": {"content": content}}],
             "usage": {"prompt_tokens": 1200, "completion_tokens": 180},
         }
         data = json.dumps(resp, ensure_ascii=False).encode()

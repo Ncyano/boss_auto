@@ -283,6 +283,158 @@ def merge_screens(collected: list[dict], new_entries: list[dict]) -> list[dict]:
     return collected
 
 
+NAME_PROMPT = (
+    "这是一份简历顶部的姓名区域截图。只输出候选人的姓名（2~6 个汉字或英文名），"
+    "不要输出「在线」「刚刚活跃」「3日内活跃」「26岁」「大专」等任何其他文字，"
+    "不要标点、不要解释。看不清就输出空字符串。"
+)
+
+
+def read_name(img, band, cfg: dict | None = None, scale: float = 2.5) -> str:
+    """用高清裁剪读姓名。
+
+    整屏送模型时姓名只占几十像素，容易认错字（实测「王伟俐」被读成「王伟刚」）；
+    把姓名区域单独裁出来放大 2.5 倍再问，准确率高很多，成本几乎不变（图很小）。
+    """
+    cfg = cfg or load_config()
+    key = api_key(cfg)
+    if not key:
+        return ""
+
+    x0, y0 = max(0, band.x), max(0, band.y)
+    x1 = min(img.shape[1], x0 + 480)
+    y1 = min(img.shape[0], y0 + 230)      # 姓名那行通常在顶部 180~220px 处
+    crop = img[y0:y1, x0:x1]
+    if crop.size == 0:
+        return ""
+
+    from PIL import Image
+
+    pic = Image.fromarray(crop[:, :, ::-1])
+    w, h = pic.size
+    pic = pic.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    buf = io.BytesIO()
+    pic.save(buf, format="PNG", optimize=True)
+    data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    payload = {
+        "model": cfg["model"],
+        "temperature": 0,
+        "max_tokens": 40,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": NAME_PROMPT},
+            {"type": "image_url", "image_url": {"url": data_uri}},
+        ]}],
+    }
+    try:
+        resp = _post(cfg, payload, key)
+        text = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        return clean_name(text)
+    except Exception as exc:
+        print(f"  [warn] 高清姓名识别失败：{exc}")
+        return ""
+
+
+STATUS_PATTERNS = re.compile(
+    r"(刚刚活跃|今日活跃|本周活跃|本月活跃|\d+\s*日内活跃|\d+\s*小时前活跃|\d+\s*分钟前活跃|"
+    r"\d+\s*天前活跃|在线|离线|月内到岗|随时到岗|\d+\s*岁|\d+\s*年(?:经验)?|"
+    r"本科|大专|硕士|博士|中专|高中|应届生|离职|在职)"
+)
+
+
+REFUSALS = ("空字符串", "空", "无", "看不清", "无法识别", "none", "null", "n/a")
+
+
+def clean_name(text: str) -> str:
+    """清掉模型/OCR 夹带的活跃状态、年龄、学历等字样。"""
+    low = (text or "").strip().strip('"\'').lower()
+    if not low or low in REFUSALS or any(low == r for r in REFUSALS):
+        return ""
+    t = (text or "").strip().strip('"\'“”　.。,，:：')
+    t = re.sub(r"[\s　]+", "", t)
+    t = STATUS_PATTERNS.sub("", t)
+    t = re.sub(r"^[·|\-]+|[·|\-]+$", "", t)
+    return t[:12]
+
+
+def _ask_name(crop, cfg: dict, scale: float = 2.5) -> str:
+    from PIL import Image as _Image
+
+    pic = _Image.fromarray(crop[:, :, ::-1])
+    w, h = pic.size
+    pic = pic.resize((int(w * scale), int(h * scale)), _Image.LANCZOS)
+    buf = io.BytesIO()
+    pic.save(buf, format="PNG", optimize=True)
+    data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    payload = {
+        "model": cfg["model"], "temperature": 0, "max_tokens": 40,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": NAME_PROMPT},
+            {"type": "image_url", "image_url": {"url": data_uri}},
+        ]}],
+    }
+    try:
+        resp = _post(cfg, payload, cfg.get("api_key") or api_key(cfg))
+        return clean_name((resp.get("choices") or [{}])[0].get("message", {}).get("content", ""))
+    except Exception:
+        return ""
+
+
+def read_name_consensus(img, band, cfg: dict | None = None, log=print) -> tuple[str, list[str]]:
+    """读姓名：OCR 定位姓名行 -> 紧贴裁剪放大 -> 多取景投票。
+
+    实测要点：整屏问模型容易认错（王伟俐 -> 王伟刚），宽取景也不行（-> 王佳俐）；
+    把姓名那一行**紧贴裁出来**再放大 2.5 倍，多种 padding 下都能稳定读对。
+    """
+    cfg = cfg or load_config()
+    votes: list[tuple[str, int]] = []          # (姓名, 权重)
+    raw_all: list[str] = []
+
+    name_box = None
+    try:
+        import vision as _v
+        engine = _v.load_ocr()
+        if engine is not None:
+            region = _v.Rect(band.x, band.y, 560, 300)
+            for it in sorted(_v.ocr_crop(engine, img, region), key=lambda i: i["box"][1]):
+                cand = clean_name(it["text"])
+                if 2 <= len(cand) <= 6 and not any(ch.isdigit() for ch in cand):
+                    name_box = it["box"]
+                    votes.append((cand, 1))     # OCR 只给 1 票
+                    raw_all.append(cand)
+                    break
+    except Exception:
+        pass
+
+    if name_box is not None:
+        x0, y0, x1, y1 = (int(v) for v in name_box)
+        crop = img[max(0, y0 - 30): y1 + 30, max(0, x0 - 30): x1 + 30]
+        if crop.size:
+            tight = _ask_name(crop, cfg, 2.5)
+            raw_all.append(tight)
+            if tight:
+                votes.append((tight, 2))        # 紧贴裁剪权重更高
+    else:
+        for width, height, scale in [(480, 230, 2.5), (420, 130, 3.2)]:
+            crop = img[max(0, band.y): band.y + height, max(0, band.x): band.x + width]
+            if crop.size:
+                got = _ask_name(crop, cfg, scale)
+                raw_all.append(got)
+                if got:
+                    votes.append((got, 1))
+
+    if not votes:
+        return "", raw_all
+
+    score: dict[str, int] = {}
+    for name, weight in votes:
+        score[name] = score.get(name, 0) + weight
+    best = max(score, key=lambda k: score[k])
+    # 有分歧就告警，但仍取权重最高者
+    if len(score) > 1:
+        log(f"  [warn] 姓名候选不一致：{score}，采用 {best}")
+    return best, raw_all
+
 def self_test() -> int:
     """不需要 key 的自检：配置、JSON 抠取、归一、合并。"""
     ok = fail = 0
@@ -302,7 +454,12 @@ def self_test() -> int:
     check("默认 base_url 指向通义", "dashscope" in cfg["base_url"], cfg["base_url"])
     check("key 状态可判断", isinstance(available(), bool), f"available={available()}")
 
-    print("\n[1b] 姓名抽取")
+    print("\n[1b] 姓名抽取与清洗")
+    for raw, want in [("王伟俐", "王伟俐"), ("王伟俐 3日内活跃", "王伟俐"),
+                      ("张锦敏刚刚活跃", "张锦敏"), ("李四 26岁 大专", "李四"),
+                      ('"王五"', "王五")]:
+        got = clean_name(raw)
+        check(f"清洗 {raw!r}", got == want, f"得到 {got!r}")
     check("能从模型输出取 name",
           (extract_json('{"name":"吴欣烨","sections":[]}') or {}).get("name") == "吴欣烨")
 

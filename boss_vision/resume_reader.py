@@ -614,8 +614,16 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             break
 
         parts = vlm.normalize(raw["sections"])
-        if step == 0 and (raw.get("name") or "").strip():
-            res.name = _name_from_vlm(raw)
+        if step == 0:
+            panel_name = _name_from_vlm(raw)
+            # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
+            zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
+            res.name = zoom_name or panel_name
+            if zoom_name and panel_name and zoom_name != panel_name:
+                res.conflicts.append(
+                    f"姓名不一致：整屏 {panel_name} / 裁剪 {zoom_name}（采用 {res.name}）")
+            if not res.name:
+                log(f"  [warn] 姓名未识别，票={votes}")
         vlm.merge_screens(work, parts["work"])
         vlm.merge_screens(projects, parts["projects"])
         vlm.merge_screens(campus, parts["campus"])
