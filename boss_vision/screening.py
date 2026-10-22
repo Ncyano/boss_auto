@@ -117,6 +117,11 @@ def screen_collection(row: dict, rules: dict) -> dict:
     if completed == "否":
         problems.append("采集未完成")
 
+    # 补采后仍缺失的字段（姓名/学校/学历/职责/公司名…）
+    missing_raw = str(row.get("缺失字段", "") or "").strip()
+    if missing_raw:
+        problems.append(f"采集缺失：{missing_raw[:60]}")
+
     # 跨屏冲突（含姓名分歧）一律不进后续流程
     try:
         conflicts = int(row.get("冲突数") or 0)

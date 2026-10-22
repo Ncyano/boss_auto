@@ -145,6 +145,7 @@ def main() -> int:
           any(w["company"] == "福州甲科技有限公司" for w in rr.work), str(rr.work[0]["company"]))
     check("职责合并", len(rr.work[0]["descriptions"]) >= 2, str(rr.work[0]["descriptions"]))
     check("reader 标记为 vlm", rr.reader == "vlm", rr.reader)
+    check("完整性：没有缺失字段", not rr.missing, str(rr.missing))
     check("用量累计 3 屏", (rr.usage or {}).get("screens") == 3, str(rr.usage))
 
     server.shutdown()

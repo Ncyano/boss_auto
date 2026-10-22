@@ -579,6 +579,27 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         rr = resume_reader.read_resume_vlm(rect, p2["wides"][0], log=print)
                     else:
                         rr = resume_reader.read_resume(rect, p2["wides"][0], log=print)
+
+                    # 采集必须完整：缺字段就整段重读（回顶再读），最多 2 次
+                    for retry in range(2):
+                        missing = list(getattr(rr, "missing", []) or [])
+                        if not missing:
+                            break
+                        print(f"     ⚠ 采集缺失：{'；'.join(missing[:4])}，"
+                              f"回顶重读 {retry + 1}/2")
+                        try:
+                            if mode == "vlm":
+                                rr2 = resume_reader.read_resume_vlm(rect, p2["wides"][0],
+                                                                    log=print)
+                            else:
+                                rr2 = resume_reader.read_resume(rect, p2["wides"][0], log=print)
+                            if len(getattr(rr2, "missing", []) or []) < len(missing):
+                                rr = rr2
+                            else:
+                                break
+                        except Exception as exc:
+                            print(f"     [warn] 重读失败：{exc}")
+                            break
                     record.update({
                         "name": rr.name,
                         "reader": getattr(rr, "reader", "ocr"),
@@ -598,6 +619,7 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
                         "sidebar_entries": rr.sidebar,
                         "conflicts": rr.conflicts,
                         "basic": getattr(rr, "basic", {}) or {},
+                        "missing": list(getattr(rr, "missing", []) or []),
                         "name_candidates": list(getattr(rr, "name_candidates", []) or []),
                         "name_disputed": bool(getattr(rr, "name_disputed", False)),
                         "needs_review": bool(rr.incomplete),

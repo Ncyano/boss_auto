@@ -113,6 +113,7 @@ class ReadResult:
     review_reason: str = ""
     reader: str = "ocr"                             # ocr / vlm
     basic: dict = field(default_factory=dict)       # 年龄/学历性质/毕业年份/求职状态
+    missing: list = field(default_factory=list)     # 采集缺失字段（补采后仍缺的）
     name_candidates: list = field(default_factory=list)   # 姓名候选（含来源）
     name_disputed: bool = False                     # 姓名存在分歧
     usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
@@ -135,6 +136,7 @@ class ReadResult:
             "section_seen": self.section_seen,
             "conflicts": self.conflicts,
             "basic": self.basic,
+            "missing": self.missing,
             "name_candidates": self.name_candidates,
             "name_disputed": self.name_disputed,
             "incomplete": self.incomplete,
@@ -757,6 +759,44 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         winenv.scroll(tx, ty, scroll_clicks)
         time.sleep(settle)
         res.steps = step + 1
+
+    # ---------- 定向补采：缺职责就放大当前屏重读 ----------
+    try:
+        import completeness as _cmp
+
+        def _snapshot():
+            return {"name": res.name, "basic": res.basic, "education": education,
+                    "work": work, "collection": {"complete": res.complete}}
+
+        ok, missing, nice = _cmp.check(_snapshot())
+        lacks_duty = any("职责" in m for m in missing)
+        if lacks_duty and max_steps > 0:
+            log("  有经历缺职责，放大当前屏重读一次")
+            try:
+                cfg_zoom = dict(cfg)
+                cfg_zoom["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+                img2 = winenv.grab_window(rect)
+                band2 = panel_band(img2, wide)
+                raw2 = vlm.read_screen(img2[band2.y:band2.y + band2.h, band2.x:band2.x + band2.w],
+                                      cfg_zoom, log=log)
+                parts2 = vlm.normalize(raw2["sections"])
+                vlm.merge_screens(work, parts2["work"])
+                u2 = raw2.get("usage") or {}
+                usage_total["prompt_tokens"] += int(u2.get("prompt_tokens") or 0)
+                usage_total["completion_tokens"] += int(u2.get("completion_tokens") or 0)
+                usage_total["screens"] += 1
+                log(f"  放大重读后：工作 {len(work)} 条")
+            except Exception as exc:
+                log(f"  [warn] 放大重读失败：{exc}")
+
+        ok, missing, nice = _cmp.check(_snapshot())
+        res.missing = missing
+        if missing:
+            log(f"  采集仍有缺失：{_cmp.summarize(missing)}")
+        elif nice:
+            log(f"  采集完整（建议补充：{'、'.join(nice[:3])}）")
+    except Exception as exc:
+        log(f"  [warn] 完整性检查失败：{exc}")
 
     res.work = work
     res.education = education
