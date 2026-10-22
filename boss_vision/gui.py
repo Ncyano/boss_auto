@@ -68,11 +68,24 @@ class App:
             if hint:
                 ttk.Label(top, text=hint).grid(row=r, column=2, sticky="w", padx=8)
 
-        add_row(0, "有效人次目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
+        # 识别方式在开跑前就显示出来（有 key 走视觉模型，没有则退 OCR）
+        try:
+            import vlm as _vlm
+            _cfg = _vlm.load_config()
+            if _vlm.api_key(_cfg):
+                _reader_text = f"视觉模型  {_cfg['model']}（更准，约 40~70 秒/人）"
+            else:
+                _reader_text = "OCR（未配置 VLM_API_KEY，较慢且解析易错）"
+        except Exception:
+            _reader_text = "OCR"
+        status = ttk.Label(top, text=f"识别方式：{_reader_text}", foreground="#0a6")
+        status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        add_row(1, "有效人次目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
                 "（只有成功打开简历的才算一次）")
-        add_row(1, "最多滚动屏数", ttk.Spinbox(top, from_=0, to=100, textvariable=self.var_scroll, width=8),
+        add_row(2, "最多滚动屏数", ttk.Spinbox(top, from_=0, to=100, textvariable=self.var_scroll, width=8),
                 "（一屏约 6~7 张卡）")
-        add_row(2, "最多刷新次数", ttk.Spinbox(top, from_=0, to=50, textvariable=self.var_refresh, width=8),
+        add_row(3, "最多刷新次数", ttk.Spinbox(top, from_=0, to=50, textvariable=self.var_refresh, width=8),
                 "（整屏都跳过 / 拿不到新卡时用）")
 
         gap_row = ttk.Frame(top)
@@ -81,15 +94,15 @@ class App:
         ttk.Label(gap_row, text="~").pack(side="left")
         ttk.Spinbox(gap_row, from_=0, to=600, increment=1, textvariable=self.var_gap_max, width=6).pack(side="left", padx=4)
         ttk.Label(gap_row, text="（每人间随机）").pack(side="left")
-        add_row(3, "", gap_row)
+        add_row(4, "", gap_row)
 
-        add_row(4, "判据", ttk.Checkbutton(top, text="检测「同事沟通进度」人像图标（勾掉则只按文字淡化）",
+        add_row(5, "判据", ttk.Checkbutton(top, text="检测「同事沟通进度」人像图标（勾掉则只按文字淡化）",
                                            variable=self.var_icon))
-        add_row(5, "刷新", ttk.Checkbutton(
+        add_row(6, "刷新", ttk.Checkbutton(
             top, text="滚动用尽时刷新页面（默认关闭：只向下滚，不刷新）", variable=self.var_refresh_page))
-        add_row(6, "块识别", ttk.Checkbutton(
+        add_row(7, "块识别", ttk.Checkbutton(
             top, text="用文字找推荐块（不依赖配色，较慢）", variable=self.var_text_scan))
-        add_row(7, "模式", ttk.Checkbutton(top, text="试运行（只识别不点击）", variable=self.var_dry))
+        add_row(8, "模式", ttk.Checkbutton(top, text="试运行（只识别不点击）", variable=self.var_dry))
 
         # ---------- 按钮 ----------
         btns = ttk.Frame(root, padding=(10, 0))
