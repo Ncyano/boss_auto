@@ -108,13 +108,18 @@ def lookup(name: str, fuzzy_min: float = 0.82) -> dict:
                 "method": "exact", "candidates": []}
 
     # 别名/曾用名（人工维护，需有来源）
+    # 支持两种写法： "旧名": "新名"   或   "旧名": {"target": "新名", "note": "依据"}
     alias = data["aliases"].get(key)
+    alias_note = ""
+    if isinstance(alias, dict):
+        alias_note = str(alias.get("note") or "")
+        alias = alias.get("target") or ""
     if alias:
-        target = records.get(normalize(alias))
+        target = records.get(normalize(str(alias)))
         if target:
             return {"listed": True, "matched": target["学校名称"], "province": target["所在省份"],
                     "level": target["办学层次"], "list": target.get("_list", "general"),
-                    "method": "alias", "candidates": []}
+                    "method": "alias", "note": alias_note, "candidates": []}
 
     # 去掉结尾括号说明再试（名单里是主体名称）
     stripped = normalize(_PAREN.sub("", name))

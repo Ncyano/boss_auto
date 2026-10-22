@@ -69,6 +69,14 @@ def main() -> int:
               f"{res['method']} -> {res['matched']}")
     res = schools.lookup("清华大学附属中学")
     check("中学不算高校", not res["listed"], res["method"])
+
+    print("\n[10] 已注销独立学院（按母体认定，需留依据）")
+    res = schools.lookup("兰州财经大学长青学院")
+    check("兰州财经大学长青学院 -> 兰州财经大学",
+          res["listed"] and res["matched"] == "兰州财经大学", f"{res['method']}")
+    check("带依据说明", bool(res.get("note")), str(res.get("note"))[:40])
+    res2 = schools.lookup("长青学院")
+    check("简称也能认", res2["listed"] and res2["matched"] == "兰州财经大学", res2["method"])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
