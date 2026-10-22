@@ -161,7 +161,8 @@ def overlap_months(edu_period: str, work_period: str) -> int:
     return max(0, min(edu[1], work[1]) - max(edu[0], work[0]))
 
 
-_INTERN_MARKERS = ("实习", "兼职", "勤工", "实训", "见习", "part-time", "intern")
+_INTERN_MARKERS = ("实习", "兼职", "勤工", "实训", "见习", "part-time", "intern",
+                   "助教", "家教", "代课", "辅导员助理", "校园大使", "学生会", "社团")
 
 
 def _is_intern(entry: dict, markers: list[str]) -> bool:

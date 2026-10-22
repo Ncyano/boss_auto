@@ -167,11 +167,15 @@ def main() -> int:
     ta = kbmod.evaluate({**base, "work": [{"company": "艺术机构", "title": "助教",
                                            "period": "2022.03-2023.09",
                                            "descriptions": ["协助授课"]}]}, data)
-    check("助教不豁免 -> 不合适", ta["verdict"] == "不合适", ta["verdict"])
+    check("助教豁免 -> 不判死", ta["verdict"] != "不合适", ta["verdict"])
     tutor = kbmod.evaluate({**base, "work": [{"company": "培训机构", "title": "家教",
                                               "period": "2022.03-2023.09",
                                               "descriptions": ["辅导功课"]}]}, data)
-    check("家教不豁免 -> 不合适", tutor["verdict"] == "不合适", tutor["verdict"])
+    check("家教豁免 -> 不判死", tutor["verdict"] != "不合适", tutor["verdict"])
+    real_job = kbmod.evaluate({**base, "work": [{"company": "某电商", "title": "客服专员",
+                                                 "period": "2022.03-2023.09",
+                                                 "descriptions": ["接待客户咨询"]}]}, data)
+    check("全职客服仍判死", real_job["verdict"] == "不合适", real_job["verdict"])
     intern2 = kbmod.evaluate({**base, "work": [{"company": "甲公司", "title": "客服",
                                                 "period": "2022.03-2023.09",
                                                 "descriptions": ["兼职客服，每周20小时"]}]}, data)
