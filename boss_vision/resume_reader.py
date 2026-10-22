@@ -639,6 +639,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "screens": 0}
     unattributed: list[list[str]] = []          # 找不到归属的职责片段
     pending_fragments: list[dict] = []          # 暂存的跨屏片段（等有经历再挂）
+    edu_screens: list[int] = []                 # 出现过教育经历的屏号
     edu_pending = 0                              # 教育字段不全时的补采计数
     prev_frame = None
 
@@ -678,6 +679,15 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 res.basic = vlm.normalize_basic(raw)
             except Exception as exc:
                 log(f"  [warn] 基本信息解析失败：{exc}")
+        elif res.basic is not None:
+            # 学习形式/毕业年份经常写在后几屏的教育区，缺了就补上
+            try:
+                later = vlm.normalize_basic(raw)
+                for key in ("education_mode", "graduation_year", "age", "status"):
+                    if not res.basic.get(key) and later.get(key):
+                        res.basic[key] = later[key]
+            except Exception:
+                pass
             panel_name = _name_from_vlm(raw)
             # 姓名单独做"紧贴裁剪 + 加权投票"，比整屏问准得多（整屏会把「王伟俐」读成「王伟刚」）
             zoom_name, votes = vlm.read_name_consensus(img, band, cfg, log=log)
@@ -706,6 +716,8 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 log(f"  ⚠ 姓名分歧：{candidates}，暂取 {res.name}")
             if not res.name:
                 log(f"  [warn] 姓名未识别，票={votes}")
+        if parts["education"] and step not in edu_screens:
+            edu_screens.append(step)
         before = len(work)
         vlm.merge_screens(work, parts["work"])
         for entry in work[before:]:          # 这一屏新增的条目：记住来自第几屏
@@ -779,6 +791,60 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             for frag in pending_fragments:
                 unattributed.append(frag.get("descriptions") or [])
         pending_fragments.clear()
+
+    # ---------- 定向补采 0：学习形式/毕业年份缺失 -> 回到教育屏放大重读 ----------
+    try:
+        need_mode = not (res.basic.get("education_mode") or "").strip()
+        need_year = not res.basic.get("graduation_year")
+        if education and (need_mode or need_year):
+            zoom_cfg2 = dict(cfg)
+            zoom_cfg2["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+            shots_by_step2 = {step: crop for step, crop in res.shots}
+            targets = [st for st in (edu_screens or []) if st in shots_by_step2]
+            if not targets:
+                targets = list(shots_by_step2)[-1:]
+            for st in targets[:2]:
+                crop = shots_by_step2.get(st)
+                if crop is None:
+                    continue
+                log(f"  教育信息不全（学习形式={res.basic.get('education_mode') or '空'}/"
+                    f"毕业={res.basic.get('graduation_year') or '空'}），放大重读第 {st + 1} 屏")
+                try:
+                    raw4 = vlm.read_screen(crop, zoom_cfg2, log=log)
+                except Exception as exc:
+                    log(f"    [warn] 重读失败：{exc}")
+                    continue
+                u4 = raw4.get("usage") or {}
+                usage_total["prompt_tokens"] += int(u4.get("prompt_tokens") or 0)
+                usage_total["completion_tokens"] += int(u4.get("completion_tokens") or 0)
+                usage_total["screens"] += 1
+                b4 = vlm.normalize_basic(raw4)
+                if not (res.basic.get("education_mode") or "").strip() and b4.get("education_mode"):
+                    res.basic["education_mode"] = b4["education_mode"]
+                    log(f"    补回学习形式：{b4['education_mode']}")
+                if not res.basic.get("graduation_year") and b4.get("graduation_year"):
+                    res.basic["graduation_year"] = b4["graduation_year"]
+                    log(f"    补回毕业年份：{b4['graduation_year']}")
+                # OCR 兜底：直接找"全日制/非全日制/统招"字样
+                if not (res.basic.get("education_mode") or "").strip():
+                    mode_ocr = vlm.scan_education_mode(crop)
+                    if mode_ocr:
+                        res.basic["education_mode"] = mode_ocr
+                        res.basic["education_mode_source"] = "ocr"
+                        log(f"    OCR 判定学习形式：{mode_ocr}")
+    except Exception as exc:
+        log(f"  [warn] 教育信息补采失败：{exc}")
+
+    # 毕业年份兜底：用教育起止的结束年
+    try:
+        if not res.basic.get("graduation_year") and education:
+            import re as _re
+            years = [int(y) for y in _re.findall(r"(19|20)\d{2}", education[0].get("period") or "")]
+            if years:
+                res.basic["graduation_year"] = max(years)
+                log(f"  毕业年份按教育起止推定：{res.basic['graduation_year']}")
+    except Exception:
+        pass
 
     # ---------- 定向补采 A：缺公司名/职位 -> 回到那一屏放大重读 ----------
     try:

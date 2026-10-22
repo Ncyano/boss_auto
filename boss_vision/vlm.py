@@ -533,6 +533,10 @@ def scan_education_mode(img) -> str:
         for key in NON_FULLTIME_KEYS:
             if key in text:
                 return "非全日制"
+        # 明确写了全日制/统招的，也要认出来（否则会被当成"未知"）
+        for key in ("全日制", "统招", "普通高校全日制", "统招全日制"):
+            if key in text:
+                return "全日制"
         return ""
     except Exception:
         return ""
