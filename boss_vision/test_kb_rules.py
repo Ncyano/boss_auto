@@ -213,6 +213,18 @@ def main() -> int:
         {"company": "戊", "title": "教师", "period": "2022-2025", "descriptions": ["授课"]},
     ]}, data2)
     check("未分类岗位 -> 不判死", unknown["verdict"] != "不合适", unknown["verdict"])
+
+    print("\n[9] 年龄硬上限 28")
+    abase = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2018-2022",
+                            "mode": "全日制"}],
+             "work": [{"company": "甲", "title": "售前客服", "period": "2022.07-2025.06",
+                       "descriptions": ["接待客户"]}],
+             "collection": {"complete": True, "needs_review": False},
+             "gap_months": 1, "total_work_months": 36}
+    for age, want in ((28, False), (29, True), (30, True)):
+        out = kbmod.evaluate({**abase, "basic": {"age": age, "education_mode": "全日制"}}, data)
+        hit = any(f["rule"] == "A01" for f in out["failures"])
+        check(f"{age} 岁 {'判死' if want else '放行'}", hit == want, out["reason"][:30])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 
