@@ -43,3 +43,12 @@ boss_vision/runs/hr-shots/
 # 知识库（含人事判定与候选人线索，不入公共仓库）
 运营助理知识库_v0.1/
 运营助理知识库_v0.1.bak/
+
+# 候选人数据（含姓名/学历/经历，绝不入库）
+data/运营助理-清洗.csv
+data/运营助理-清洗报告.txt
+data/dataset/
+data/fewshot.json
+data/train-report.json
+data/train-report.md
+data/llm-judge-结果.csv
