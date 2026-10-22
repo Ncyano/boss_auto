@@ -694,6 +694,24 @@ def run(live: bool, limit: int, max_scrolls: int, read: str, anchor: tuple[int, 
     PROGRESS.update({"handled": handled, "valid": valid,
                      "state": "stopped" if STOP else "done"})
     tag = "已停止" if STOP else "完成"
+    # 判定汇总
+    try:
+        verdicts = {}
+        for rec in results:
+            v = (rec.get("judgment") or {}).get("verdict")
+            if v:
+                verdicts[v] = verdicts.get(v, 0) + 1
+        if verdicts:
+            parts = "，".join(f"{k} {v}" for k, v in verdicts.items())
+            print(f"判定汇总：{parts}")
+            for rec in results:
+                j = rec.get("judgment") or {}
+                if j.get("verdict"):
+                    print(f"  {rec.get('name') or '(无名)':<10} {j['verdict']:<4}"
+                          f"（{j.get('stage', '')}层）{j.get('reason', '')[:50]}")
+    except Exception as exc:
+        print(f"[warn] 判定汇总失败：{exc}")
+
     print(f"\n{tag}：尝试 {handled} 次，有效 {valid} 个（目标 {limit}）")
     print(f"结果目录：{OUT}")
     print(f"  {stamps}-results.json   结构化结果")
