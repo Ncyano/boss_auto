@@ -194,6 +194,13 @@ def _check_school_work_overlap(education: list, work: list, params: dict) -> lis
             break
     return problems
 
+def _norm_company(text: str) -> str:
+    """公司名归一：去空格、全角括号转半角、去掉末尾标点。"""
+    t = (text or "").strip()
+    t = t.replace("（", "(").replace("）", ")").replace("　", "")
+    t = re.sub(r"\s+", "", t)
+    return t.rstrip("。.;；,，")
+
 def _title_hits(entry: dict, titles: list[str]) -> list[str]:
     """职位/职责里命中的岗位词（取最长匹配，避免"客服"吞掉"售前客服"）。"""
     text = " ".join([str(entry.get("title") or "")] +
@@ -349,16 +356,17 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
         else:
             advisories.append(f"最近空档 {gap} 个月（上限 {gap_max}）")
 
-    peers = params_of(kb, "P03").get("blacklist") or []
+    p03 = params_of(kb, "P03") or {}
+    peers_exact = {_norm_company(c) for c in (p03.get("companies") or []) if c}
     companies = [(w.get("company") or "").strip() for w in work]
     if not any(companies):            # 兼容旧接口：只给了 company_N
         companies = [resume.get(f"company_{i}") or "" for i in range(1, 11)]
     for company in companies:
         if not company:
             continue
-        hit = next((k for k in peers if k and k in company), "")
-        if hit:
-            failures.append({"rule": "P03", "reason": f"同行公司（{hit}）：{company}",
+        # 只比对公司全称（用户要求：不做关键词/简称衍生）
+        if peers_exact and _norm_company(company) in peers_exact:
+            failures.append({"rule": "P03", "reason": f"同行公司（全称匹配）：{company}",
                              "evidence": company})
             break
 

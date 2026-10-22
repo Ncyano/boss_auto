@@ -92,7 +92,7 @@ def test_new_hard_rules() -> None:
     check("空档超 6 个月 -> 不合格", gap["最终结论"] == screening.REJECT, gap["最终结论"])
     check("原因含空档", "空档" in gap["原因"], gap["原因"])
 
-    peer = screening.screen_row(row_of(**{"第1家公司": "福州一硕网络科技有限公司"}), rules)
+    peer = screening.screen_row(row_of(**{"第1家公司": "一硕网络有限公司"}), rules)
     check("同行 -> 不合格", peer["最终结论"] == screening.REJECT, peer["最终结论"])
     check("原因含同行", "同行" in peer["原因"], peer["原因"])
 
@@ -226,7 +226,7 @@ def main() -> int:
         hit = any(f["rule"] == "A01" for f in out["failures"])
         check(f"{age} 岁 {'判死' if want else '放行'}", hit == want, out["reason"][:30])
 
-    print("\n[10] 同行名单（7 家）")
+    print("\n[10] 同行名单（9 家，全称精确）")
     pbase2 = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2018-2022",
                              "mode": "全日制"}],
               "collection": {"complete": True, "needs_review": False},
@@ -234,13 +234,20 @@ def main() -> int:
               "basic": {"age": 26, "education_mode": "全日制"}}
     peers = ["南昌南风网络有限公司", "正北传媒", "福州云上源严选网络科技有限公司",
              "福州飞云好物网络有限公司", "福州谷一科技有限公司", "福州谷二科技有限公司",
-             "福州谷三科技有限公司", "谷三网络", "一硕网络有限公司",
-             "天成卓越网络科技有限公司"]
+             "福州谷三科技有限公司", "一硕网络有限公司", "天成卓越网络科技有限公司"]
     for name in peers:
         out = kbmod.evaluate({**pbase2, "work": [
             {"company": name, "title": "售前客服", "period": "2022.07-2025.06",
              "descriptions": ["接待客户"]}]}, data)
         check(f"同行 {name[:8]} 判死", out["verdict"] == "不合适", out["verdict"])
+
+    # 不做衍生：少一个词/同前缀公司都不算同行
+    for variant in ("福州云上源网络科技有限公司", "福州谷二商贸有限公司", "福州南风网络科技有限公司"):
+        out = kbmod.evaluate({**pbase2, "work": [
+            {"company": variant, "title": "售前客服", "period": "2022.07-2025.06",
+             "descriptions": ["接待客户"]}]}, data)
+        check(f"不衍生 {variant[:10]} 放行", out["verdict"] != "不合适", out["verdict"])
+
     okay = kbmod.evaluate({**pbase2, "work": [
         {"company": "福州某正常电商有限公司", "title": "售前客服",
          "period": "2022.07-2025.06", "descriptions": ["接待客户"]}]}, data)
