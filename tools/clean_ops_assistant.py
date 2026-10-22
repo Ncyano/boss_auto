@@ -126,8 +126,9 @@ def main() -> int:
                 continue
             months = job_months(period)
             total_months += months
+            duty = (r.get(f"第{i}家工作内容") or "").strip()
             works.append({"company": company, "title": title, "period": period,
-                          "months": months})
+                          "months": months, "duty": duty})
 
         # 按结束时间倒序排列（列表顺序不可靠：有人把最早的一段写在最前面）
         def _sort_key(w):
@@ -211,7 +212,14 @@ def main() -> int:
             "最近一段起止": works[0]["period"] if works else "",
             "全部工作经历": " | ".join(
                 f'{w["period"]} {w["company"]}/{w["title"]}' for w in works),
-            "全部职责": (r.get("第1家工作内容") or "")[:200],
+            "全部职责": (works[0]["duty"] if works else "")[:200],
+            **{f"第{i}家公司": r.get(f"第{i}家公司", "") for i in range(1, 11)},
+            **{f"第{i}家职位": r.get(f"第{i}家职位", "") for i in range(1, 11)},
+            **{f"第{i}家起止": r.get(f"第{i}家起止", "") for i in range(1, 11)},
+            "工作经历全文": "\n".join(
+                f'{w["period"]} {w["company"]}/{w["title"]}'
+                + (f'：{w["duty"]}' if w["duty"] else "")
+                for w in works),
             "招聘人": r.get("招聘人", ""),
             "人事结论": r.get("是否合适", ""),
             "人事原因": (r.get("人事原因") or "").strip(),

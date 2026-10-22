@@ -144,6 +144,12 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
             education_status = "不通过"
             failures.append({"rule": "E02", "reason": "学历为非全日制", "evidence": education_evidence})
 
+        # E02 补充：学习形式未知时无法排除非全日制 -> 待复核（未知不等于通过）
+        if education_status == "通过":
+            mode_now = (first.get("mode") or basic.get("education_mode") or "").strip()
+            if not mode_now:
+                reviews.append("学习形式未知（未读到全日制/非全日制），E02 无法核对")
+
         # E03 学校名单：政策已确认，但依据未接入 -> 未命中只能待复核
         school = (first.get("school") or "").strip()
         if schools_lookup is not None and school and education_status == "通过":

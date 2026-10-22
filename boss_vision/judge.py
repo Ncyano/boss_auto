@@ -30,7 +30,7 @@ DEFAULT_CONFIG = {
     "api_key_env": "DEEPSEEK_API_KEY",
     "api_key": "",
     "temperature": 0,
-    "max_tokens": 1200,
+    "max_tokens": 2000,
     "timeout": 120,
     "retries": 2,
 }
@@ -60,10 +60,17 @@ SYSTEM_PROMPT = """你是运营助理岗位的简历证据抽取与匹配助手�
   "decision_basis": "一句话总结依据"
 }
 
-判定口径：
-- 至少一条 W01–W04 为"满足"，且没有"明确不满足"的核心项 -> 建议合适
-- 有职责层面的"明确不满足"（有原文证据说明不具备客户沟通/运营类职责） -> 不合适
-- 证据不足、或规则都只是"无法判断" -> 待复核
+判定口径（按人事的真实习惯）：
+- 有任意一条 W01–W03 为"满足"或"部分满足"（职责里出现客户沟通/客服售后/销售导购的具体动作）
+  -> 建议合适。
+- 全部经历的职责都属于：生产/仓库/文员/内勤/行政后勤/纯技术/纯设计/教育教务/餐饮后厨，
+  没有任何对客户沟通或线上运营的动作 -> 不合适（这就是 W05 要求的"职责层面的不满足"，
+  证据就是这些职责原文本身）。
+- 电商店铺运营（选品、上架、SKU维护、活动报名、推广投放、数据复盘、供应链对接）
+  属于 W04 运营相关经验，可判"建议合适"，不要因为"没有直接对客户沟通"就判不合适。
+- "待复核"只用于**资料缺失**：没有工作经历文本、经历明显截断、职责为空。
+  不要因为"职位名不典型"或"写得不详细"就转待复核。
+- 判断必须落到 合适/不合适 其中之一，除非确实缺资料。
 """
 
 
@@ -94,8 +101,10 @@ def _post(cfg: dict, messages: list[dict], key: str) -> dict:
     payload = {
         "model": cfg["model"],
         "temperature": cfg.get("temperature", 0),
-        "max_tokens": cfg.get("max_tokens", 1200),
+        "max_tokens": cfg.get("max_tokens", 2000),
         "response_format": {"type": "json_object"},
+        # deepseek 默认开启思考模式；分类任务不需要思维链，关掉更快更稳（且思考模式下 temperature 不生效）
+        "thinking": {"type": "disabled"},
         "messages": messages,
     }
     req = urllib.request.Request(
@@ -137,16 +146,37 @@ def rule_brief(kb: dict) -> str:
     return "\n".join(lines)
 
 
-def build_messages(work_text: str, kb: dict) -> list[dict]:
+FEWSHOT_FILE = ROOT / "data" / "fewshot.json"
+
+
+def load_fewshot(limit: int | None = None) -> list[dict]:
+    """读取训练集产出的少样本示例（data/fewshot.json）。"""
+    if not FEWSHOT_FILE.exists():
+        return []
+    try:
+        data = json.loads(FEWSHOT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    examples = [e for e in (data.get("examples") or [])
+                if e.get("user") and e.get("assistant")]
+    return examples[:limit] if limit else examples
+
+
+def build_messages(work_text: str, kb: dict, shots: list[dict] | None = None) -> list[dict]:
     rules = rule_brief(kb)
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for ex in (shots if shots is not None else load_fewshot()):
+        messages.append({"role": "user", "content": ex["user"]})
+        messages.append({"role": "assistant", "content": ex["assistant"]})
     user = (f"知识库版本：{kb.get('version')}\n"
             f"已启用的工作证据规则：\n{rules}\n\n"
             f"候选人工作经历：\n{work_text[:8000]}")
-    return [{"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user}]
+    messages.append({"role": "user", "content": user})
+    return messages
 
 
-def judge(work_text: str, kb: dict | None = None, cfg: dict | None = None) -> dict:
+def judge(work_text: str, kb: dict | None = None, cfg: dict | None = None,
+          shots: list[dict] | None = None) -> dict:
     """按知识库工作规则取证，返回建议（不直接定论）。"""
     cfg = cfg or load_config()
     kb = kb or kbmod.load()
@@ -154,7 +184,7 @@ def judge(work_text: str, kb: dict | None = None, cfg: dict | None = None) -> di
     if not key:
         raise RuntimeError("没有配置 DEEPSEEK_API_KEY")
 
-    messages = build_messages(work_text, kb)
+    messages = build_messages(work_text, kb, shots)
     last = ""
     for attempt in range(int(cfg.get("retries", 2)) + 1):
         try:
