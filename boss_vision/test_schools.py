@@ -60,6 +60,15 @@ def main() -> int:
     r = schools.lookup("园林技术")
     check("专业名不会被当成学校", not r["listed"], str(r))
 
+
+    print("\n[9] 独立学院/历史写法")
+    for name, want in [("华侨大学厦门工学院", "厦门工学院"),
+                       ("福州大学阳光学院", "阳光学院")]:
+        res = schools.lookup(name)
+        check(f"{name} 命中名单", res["listed"] and res["matched"] == want,
+              f"{res['method']} -> {res['matched']}")
+    res = schools.lookup("清华大学附属中学")
+    check("中学不算高校", not res["listed"], res["method"])
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 0 if FAIL == 0 else 1
 

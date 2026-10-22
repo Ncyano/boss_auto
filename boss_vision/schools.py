@@ -125,6 +125,12 @@ def lookup(name: str, fuzzy_min: float = 0.82) -> dict:
                     "level": hit["办学层次"], "list": hit.get("_list", "general"),
                     "method": "paren", "candidates": []}
 
+    # 包含匹配：独立学院/校区/历史写法。名单校名（≥4 字）出现在简历校名里就算命中，
+    # 例如「福州大学阳光学院」包含「阳光学院」、「华侨大学厦门工学院」包含「厦门工学院」。
+    contained = _contained_match(key, records)
+    if contained:
+        return contained
+
     # 模糊匹配只给候选，不直接判定
     near = difflib.get_close_matches(key, records.keys(), n=3, cutoff=fuzzy_min)
     return {
@@ -134,6 +140,41 @@ def lookup(name: str, fuzzy_min: float = 0.82) -> dict:
         "candidates": [records[k]["学校名称"] for k in near],
     }
 
+
+_ACADEMIC_TAIL = ("大学", "学院", "学校", "职业技术大学", "职业技术学院", "高等专科学校")
+# 这些是中小学/幼儿园，不是高校，不能靠"包含大学名"混进名单
+_NOT_COLLEGE = ("中学", "小学", "初中", "高中", "幼儿园", "附属中学", "附属小学")
+
+
+def _contained_match(key: str, records: dict) -> dict | None:
+    """名单里的校名是简历校名的子串时，视为同一所学校（独立学院/校区/历史写法）。
+
+    只认长度 ≥4 的名单校名，且要求它的前面是「XX大学/XX学院」这类母体前缀，
+    避免「学院」这种泛词误命中。取最长匹配。
+    """
+    if len(key) < 5:
+        return None
+    if any(word in key for word in _NOT_COLLEGE):
+        return None
+    best_score = (-1, -1)          # (出现位置, 长度)：越靠右、越长越优先
+    best_hit = None
+    for name, rec in records.items():
+        name = "".join(ch for ch in name if not ch.isspace())
+        if len(name) < 4 or name == key or name not in key:
+            continue
+        pos = key.index(name)
+        prefix = key[:pos]
+        if prefix and not prefix.endswith(_ACADEMIC_TAIL):
+            continue
+        score = (pos, len(name))
+        if score > best_score:
+            best_score, best_hit = score, rec
+    if best_hit:
+        return {"listed": True, "matched": best_hit["学校名称"],
+                "province": best_hit["所在省份"], "level": best_hit["办学层次"],
+                "list": best_hit.get("_list", "general"), "method": "contain",
+                "candidates": []}
+    return None
 
 def check_names(names: list[str]) -> list[dict]:
     return [{"input": n, **lookup(n)} for n in names]
