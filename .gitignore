@@ -52,3 +52,6 @@ data/fewshot.json
 data/train-report.json
 data/train-report.md
 data/llm-judge-结果.csv
+
+# 判断模型密钥（绝密）
+data/llm-config.json
