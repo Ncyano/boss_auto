@@ -1175,7 +1175,7 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
         return candidates[0]
     return None
 
-def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
+def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
                      settle: float = 0.6, scroll_clicks: int = -3,
                      cfg: dict | None = None, name_hint: str = "") -> "ReadResult":
     """快速读法：先把所有屏截下来，再并行 OCR，最后一次性结构化。
@@ -1332,6 +1332,31 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
                     f"（{guess[0]['company']} 等）")
         except Exception as exc:
             log(f"  [warn] 工作经历硬捞失败：{exc}")
+
+    # ---------- 6a2. 没读到教育经历：滚到底再截一屏（长简历前半段看不到） ----------
+    if not res.education:
+        try:
+            log("  没读到教育经历，滚到页面底部再读一屏")
+            for _ in range(10):
+                band_r = panel_band(winenv.grab_window(rect), wide)
+                winenv.scroll(rect[0] + band_r.x + band_r.w // 2,
+                              rect[1] + band_r.y + band_r.h // 2, -6)
+                time.sleep(0.25)
+            img_b = winenv.grab_window(rect)
+            band_b = panel_band(img_b, wide)
+            crop_b = img_b[band_b.y: band_b.y + band_b.h, band_b.x: band_b.x + band_b.w]
+            otext_b = (vlm.read_screen_text(crop_b, cfg) or {}).get("text", "")
+            if otext_b:
+                texts.append(otext_b)
+                st_b = judge.structure_text(otext_b, judge.load_config())
+                parts_b = vlm.normalize((st_b or {}).get("data", {}).get("sections"))
+                if parts_b.get("education"):
+                    res.education = parts_b["education"]
+                    log(f"    底部屏补回教育 {len(parts_b['education'])} 条")
+                if parts_b.get("work"):
+                    vlm.merge_screens(res.work, parts_b["work"])
+        except Exception as exc:
+            log(f"  [warn] 底部补采失败：{exc}")
 
     # ---------- 6b. 教育区定向补采（校名双读 + 缺失字段放大重读） ----------
     try:
