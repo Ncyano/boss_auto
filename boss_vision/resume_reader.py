@@ -1415,7 +1415,18 @@ def _heuristic_work_entries(text: str) -> list[dict]:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     entries: list[dict] = []
     cur = None
+    in_edu = False
     for ln in lines:
+        # 教育区之后的行不当作工作经历
+        if _re.match(r"^(教育经历|教育背景|在校经历|校园经历|项目经历|专业技能|资格证书|所获荣誉|自我评价)", ln):
+            if _re.match(r"^教育", ln) or _re.match(r"^(项目|专业|资格|所获|自我)", ln):
+                in_edu = True
+            continue
+        if _re.match(r"^工作经历", ln):
+            in_edu = False
+            continue
+        if in_edu:
+            continue
         if not _re.search(r"(19|20)\d{2}", ln):
             if cur is not None and len(ln) > 4:
                 cur["descriptions"].append(ln)
@@ -1427,7 +1438,7 @@ def _heuristic_work_entries(text: str) -> list[dict]:
         if not head:
             continue
         if not any(k in head for k in ("公司", "集团", "工作室", "事务所", "中心", "机构",
-                                       "学校", "学院", "医院", "政府", "店", "厂", "传媒")):
+                                       "医院", "政府", "店", "厂", "传媒", "银行")):
             continue
         parts = [p for p in _re.split(r"[|丨\s·]+", head) if p]
         company = parts[0] if parts else head
