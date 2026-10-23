@@ -85,7 +85,12 @@ def lookup(name: str, fuzzy_min: float = 0.82) -> dict:
         candidates  模糊匹配的候选（最多 3 个，需人工确认）
     """
     data = load()
-    records: dict[str, dict] = data["records"]
+    all_records: dict[str, dict] = data["records"]
+    # 口径：只认教育部「普通高等学校」名单；成人高校（_list == "adult"）不计入
+    records: dict[str, dict] = {
+        k: v for k, v in all_records.items()
+        if (v.get("_list") or "general") != "adult"
+    }
     key = normalize(name)
     if not key:
         return {"listed": False, "matched": "", "method": "none", "candidates": []}

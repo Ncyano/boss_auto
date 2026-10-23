@@ -1175,8 +1175,8 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
         return candidates[0]
     return None
 
-def read_resume_fast(rect, wide, log=print, max_screens: int = 4,
-                     settle: float = 0.5, scroll_clicks: int = -4,
+def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
+                     settle: float = 0.6, scroll_clicks: int = -3,
                      cfg: dict | None = None, name_hint: str = "") -> "ReadResult":
     """快速读法：先把所有屏截下来，再并行 OCR，最后一次性结构化。
 
