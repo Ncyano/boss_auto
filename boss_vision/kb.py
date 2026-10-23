@@ -173,23 +173,46 @@ def _is_intern(entry: dict, markers: list[str]) -> bool:
 
 
 def _check_school_work_overlap(education: list, work: list, params: dict) -> list[dict]:
-    """在校期间工作：重合 ≥ N 个月且没有实习标记 -> 不合格。"""
+    """在校期间工作：重合 > N 个月且无豁免 -> 不合格。
+
+    人事口径（2026-10 更新）：
+      · 门槛 16 个月
+      · 标注「实习」的时段不计入
+      · 毕业前 12 个月（如 2024 年毕业，2023-01~2024-06）的工作不计入
+    """
     if not education or not work:
         return []
-    min_overlap = int(params.get("min_overlap_months", 12))
+    min_overlap = int(params.get("min_overlap_months", 16))
     markers = params.get("intern_markers") or list(_INTERN_MARKERS)
+    grace = int(params.get("graduation_grace_months", 12))
     edu_period = (education[0].get("period") or "")
     if not edu_period:
         return []
+
+    edu_span = _span(edu_period, is_edu=True)
+    edu_end = edu_span[1] if edu_span else None
     problems = []
     for idx, entry in enumerate(work, 1):
-        months = overlap_months(edu_period, entry.get("period") or "")
-        if months >= min_overlap and not _is_intern(entry, markers):
+        period = entry.get("period") or ""
+        months = overlap_months(edu_period, period)
+        if not months:
+            continue
+        if _is_intern(entry, markers):
+            continue                     # 实习不计入
+        # 毕业前 grace 个月：从 edu_end 往回数，与这段工作的重合部分扣掉
+        if edu_end and grace > 0:
+            wspan = _span(period)
+            if wspan:
+                ws, we = wspan
+                grace_start = max(0, edu_end - grace)
+                cut = max(0, min(we, edu_end) - max(ws, grace_start))
+                months = max(0, months - cut)
+        if months > min_overlap:
             problems.append({
                 "rule": "P06",
                 "reason": f"在校期间工作 {months} 个月（第{idx}家）："
                           f"{entry.get('company') or ''} {entry.get('title') or ''}",
-                "evidence": f"教育 {edu_period} / 工作 {entry.get('period')}",
+                "evidence": f"教育 {edu_period} / 工作 {period}（已扣实习与毕业前 {grace} 个月）",
             })
             break
     return problems
