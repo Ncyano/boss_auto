@@ -410,9 +410,7 @@ def is_plausible_name(text: str) -> bool:
     t = (text or "").strip().rstrip("网直聘 ")
     if not t or t in NON_NAME_WORDS:
         return False
-    # 纯大写英文 5 个以上是乱码/代号（CRTCRT）
-    if _re.fullmatch(r"[A-Z]{5,}", t):
-        return False
+    # 备注：英文马甲（含 CRTCRT 这种全大写）是真人自取的昵称，不能当乱码拒掉
     if any(w in t for w in TAG_WORDS):
         return False
     if HANZI.match(t):
