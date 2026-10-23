@@ -602,7 +602,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     card_name = ""
                     try:
                         import resume_reader as _rr
-                        card_name = _rr.card_name(winenv.grab_window(rect), p["cards"][picked])
+                        card_idx = picked[0] if isinstance(picked, tuple) else picked
+                        card_name = _rr.card_name(winenv.grab_window(rect),
+                                                  p["cards"][card_idx])
                         if card_name:
                             print(f"     卡片姓名: {card_name}")
                     except Exception as exc:

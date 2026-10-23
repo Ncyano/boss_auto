@@ -796,8 +796,16 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 res.stopped_reason = "第一段教育字段不全（已补采 2 屏仍未补齐）"
                 break
         if step > 0 and not moved:
+            # 一屏都没读到内容（工作/教育都空）-> 可能是渲染没出来，再等再试一次
+            if not work and not education and step < 2:
+                log("  整屏没读到内容，等 1 秒重试")
+                time.sleep(1.0)
+                continue
             res.stopped_reason = "页面未移动（判断为到底，未读到教育经历）"
             break
+        if step == 0 and not work and not education:
+            # 第 1 屏空白：不判到底，先滚一次找内容
+            log("  第 1 屏没读到内容，向下滚一屏再试")
         if step == max_steps - 1:
             res.stopped_reason = f"达到滚动上限 {max_steps} 屏（未读到教育经历）"
             break
@@ -820,6 +828,34 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             for frag in pending_fragments:
                 unattributed.append(frag.get("descriptions") or [])
         pending_fragments.clear()
+
+    # ---------- 定向补采 -1：一条工作经历都没读到 -> 放大重读所有屏 ----------
+    try:
+        if not work and res.shots:
+            zoom_cfg0 = dict(cfg)
+            zoom_cfg0["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+            for st0, crop0 in res.shots[:3]:
+                log(f"  没读到工作经历，放大重读第 {st0 + 1} 屏")
+                try:
+                    if str(cfg.get("pipeline") or "vlm").lower() == "ocr":
+                        otext0 = (vlm.read_screen_text(crop0, zoom_cfg0, log=log) or {}).get("text", "")
+                        import judge as _j0
+                        sdata0 = (_j0.structure_text(otext0, _j0.load_config()) or {}).get("data") or {}
+                        parts0 = {"work": [], "education": sdata0.get("sections") or []}
+                        parts0 = vlm.normalize(sdata0.get("sections"))
+                    else:
+                        raw0 = vlm.read_screen(crop0, zoom_cfg0, log=log)
+                        parts0 = vlm.normalize(raw0["sections"])
+                    vlm.merge_screens(work, parts0["work"])
+                    if parts0["education"] and not education:
+                        education.extend(parts0["education"])
+                    if work:
+                        log(f"    补回工作 {len(work)} 段")
+                        break
+                except Exception as exc:
+                    log(f"    [warn] 重读失败：{exc}")
+    except Exception as exc:
+        log(f"  [warn] 工作经历兜底失败：{exc}")
 
     # ---------- 定向补采 0：学习形式/毕业年份缺失 -> 回到教育屏放大重读 ----------
     try:

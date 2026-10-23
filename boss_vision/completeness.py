@@ -15,7 +15,7 @@ import re
 
 # 必填项：缺了必须补采
 REQUIRED_EDU = ("school", "degree")
-REQUIRED_WORK = ("company", "title", "period", "descriptions")
+REQUIRED_WORK = ("company", "title", "descriptions")   # 起止缺失不阻断，只提示
 # 建议项：尽量补
 NICE_EDU = ("major", "period", "mode")
 NICE_BASIC = ("age", "education_mode", "graduation_year")
@@ -72,6 +72,8 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
             # 公司名与起止都空 -> 多半是标签行（"商家运营 | 线上运营"），不是真工作
             if _blank(item.get("company")) and _blank(item.get("period")):
                 continue
+            if _blank(item.get("period")):
+                nice.append(f"第{idx}家起止")
             for key in REQUIRED_WORK:
                 if key == "descriptions":
                     if _blank(item.get("descriptions")):

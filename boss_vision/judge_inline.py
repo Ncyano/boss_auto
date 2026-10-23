@@ -70,7 +70,7 @@ def judge_record(rec: dict, rules: dict | None = None) -> dict:
     if "采集" in reason_text or "缺失" in reason_text:
         stage = "采集"
     elif work in ("—", "", None):
-        stage = "学历"
+        stage = "硬规则"      # 学历/年龄/空档/同行/应届/经验，都属硬规则拦截
     else:
         stage = "工作经历"
     return {"verdict": verdict, "status": status, "reason": reason,
@@ -111,7 +111,7 @@ def self_test() -> int:
     bad = dict(rec, education=[{"school": "某中专", "degree": "中专"}])
     out = judge_record(bad)
     check("中专 -> 不合适", out["verdict"] == "不合适", out["verdict"])
-    check("阶段=学历", out["stage"] == "学历", out["stage"])
+    check("阶段=硬规则", out["stage"] == "硬规则", out["stage"])
     check("原因含学历", "学历" in out["reason"], out["reason"])
 
     no_work = dict(rec, work=[])
