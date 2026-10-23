@@ -1422,10 +1422,11 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
             if hit:
                 res.work_state = "explicit_none"
                 res.work_evidence = f"简历写明「{hit}」"
-            elif res.education and "教育经历" in full_text and "工作经历" not in full_text:
-                # 采集已完整（教育区读到了、整份简历没有工作经历区块）-> 确认无经历
+            elif res.education and "教育经历" in full_text:
+                # 教育区读到了（含滚到底补采），仍然没有任何工作条目 -> 确认无经历
                 res.work_state = "explicit_none"
-                res.work_evidence = "整份简历只有教育经历，没有工作经历区块"
+                res.work_evidence = ("整份简历读到教育区，未发现任何工作经历条目"
+                                     + ("（含底部补采）" if len(crops) >= max_screens else ""))
         except Exception:
             pass
     res.shots = [(i, c) for i, c in enumerate(crops)]
