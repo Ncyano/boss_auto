@@ -118,6 +118,7 @@ class ReadResult:
     name_disputed: bool = False                     # 姓名存在分歧
     name_issues: list = field(default_factory=list) # 姓名诊断（只记录，不阻断判定）
     work_state: str = "unknown"                     # present / explicit_none / unknown
+    work_evidence: str = ""                         # 判 explicit_none 的依据（可追溯）
     usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
 
     def as_dict(self) -> dict:
@@ -143,6 +144,7 @@ class ReadResult:
             "name_disputed": self.name_disputed,
             "name_issues": self.name_issues,
             "work_state": self.work_state,
+            "work_evidence": self.work_evidence,
             "incomplete": self.incomplete,
             "review_reason": self.review_reason,
         }
@@ -1038,12 +1040,15 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     if ln.startswith(("工作经历", "实习经历")):
                         nxt = [j for j in range(i + 1, len(lines))
                                if lines[j].startswith(heads[2:])]
-                        if nxt and (nxt[0] - i) <= 2:      # 标题后紧跟别的区块
+                        # 必须紧邻：中间只要有一行内容（哪怕结构化没提取出来），
+                        # 就不能判"空区块"，一律保持 unknown
+                        if nxt and (nxt[0] - i) == 1:
                             explicit = True
                             work_evidence = f"「{lines[i][:6]}」区块为空（紧跟「{lines[nxt[0]][:6]}」）"
                         break
 
             res.work_state = "explicit_none" if explicit else "unknown"
+        res.work_evidence = work_evidence if res.work_state == "explicit_none" else ""
         if res.work_state == "explicit_none" and not work:
             log(f"  工作经历：确认无（证据：{work_evidence or '区块为空'}）")
     except Exception as exc:
