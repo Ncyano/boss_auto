@@ -1173,6 +1173,155 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
         return candidates[0]
     return None
 
+def read_resume_fast(rect, wide, log=print, max_screens: int = 4,
+                     settle: float = 0.5, scroll_clicks: int = -4,
+                     cfg: dict | None = None, name_hint: str = "") -> "ReadResult":
+    """快速读法：先把所有屏截下来，再并行 OCR，最后一次性结构化。
+
+    相比逐屏"OCR + 结构化"，2 屏以上能省一半时间：
+        ���屏：截图 2s + 并行 OCR 7s + 结构化 4s ≈ 13s（原 20.8s）
+        3 屏：截图 3s + 并行 OCR 7s + 结构化 4s ≈ 14s（原 31s）
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    cfg = cfg or vlm.load_config()
+    res = ReadResult()
+    res.reader = "vlm-fast"
+
+    # ---------- 1. 回到顶部 ----------
+    band0 = None
+    try:
+        img0 = winenv.grab_window(rect)
+        band0 = panel_band(img0, wide)
+        winenv.scroll(rect[0] + band0.x + band0.w // 2,
+                      rect[1] + band0.y + band0.h // 2, 8)
+        time.sleep(settle)
+    except Exception as exc:
+        log(f"  [warn] 回顶失败：{exc}")
+
+    # ---------- 2. 连续截屏（页面不再移动就停） ----------
+    crops: list = []
+    prev = None
+    for _ in range(max_screens):
+        img = winenv.grab_window(rect)
+        band = panel_band(img, wide)
+        crop = img[band.y: band.y + band.h, band.x: band.x + band.w]
+        if prev is not None and crop.shape == prev.shape and (crop == prev).all():
+            break                       # 这一屏和上一屏完全相同 -> 到底了
+        crops.append(crop.copy())
+        prev = crop
+        try:
+            winenv.scroll(rect[0] + band.x + band.w // 2,
+                          rect[1] + band.y + band.h // 2, scroll_clicks)
+        except Exception:
+            break
+        time.sleep(settle)
+
+    res.screen_count = len(crops)
+    log(f"  快速读法：截到 {len(crops)} 屏")
+
+    # ---------- 3. 并行 OCR ----------
+    texts: list[str] = []
+    try:
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(crops)))) as pool:
+            futures = [pool.submit(vlm.read_screen_text, c, cfg) for c in crops]
+            for fut in futures:
+                try:
+                    texts.append((fut.result() or {}).get("text", ""))
+                except Exception as exc:
+                    log(f"    [warn] 某屏 OCR 失败：{exc}")
+                    texts.append("")
+    except Exception as exc:
+        log(f"  [warn] 并行 OCR 失败：{exc}")
+
+    # 相邻屏有重叠，去掉重复行
+    merged_lines: list[str] = []
+    for text in texts:
+        for ln in (text or "").splitlines():
+            ln = ln.strip()
+            if ln and (not merged_lines or ln != merged_lines[-1]):
+                merged_lines.append(ln)
+    full_text = "\n".join(merged_lines)
+    res.text = full_text
+
+    # ---------- 4. 一次性结构化 ----------
+    data = {}
+    try:
+        import judge as _judge
+        st = _judge.structure_text(full_text, _judge.load_config())
+        data = (st or {}).get("data") or {}
+    except Exception as exc:
+        log(f"  [warn] 结构化失败：{exc}")
+
+    parts = {"work": [], "education": [], "projects": [], "campus": []}
+    try:
+        parts = vlm.normalize(data.get("sections"))
+    except Exception as exc:
+        log(f"  [warn] 结构化结果归一失败：{exc}")
+
+    res.work = parts.get("work") or []
+    res.education = parts.get("education") or []
+    res.basic = dict(data.get("basic") or {})
+    res.name = (data.get("name") or "").strip()
+    res.complete = bool(res.work or res.education)
+
+    # ---------- 5. 姓名：结构里没有就用紧贴裁剪补 ----------
+    if not res.name and crops:
+        try:
+            head_band = vision.Rect(0, 0, crops[0].shape[1], min(260, crops[0].shape[0]))
+            nm, votes = vlm.read_name_consensus(crops[0], head_band, cfg, log=log)
+            res.name = nm
+            res.name_candidates = list(votes)
+        except Exception as exc:
+            log(f"  [warn] 姓名补读失败：{exc}")
+
+    # ---------- 6. 学习形式 / 毕业年份兜底 ----------
+    basic = res.basic
+    if not basic.get("education_mode"):
+        for crop in crops:
+            try:
+                hit = vlm.scan_education_mode(crop)
+                if hit:
+                    basic["education_mode"] = hit
+                    break
+            except Exception:
+                pass
+    if res.education:
+        edu0 = res.education[0]
+        if not basic.get("graduation_year"):
+            years = [int(y) for y in __import__("re").findall(
+                r"(?<!\d)(\d{4})(?!\d)", edu0.get("period") or "") if 1980 <= int(y) <= 2035]
+            if years:
+                basic["graduation_year"] = str(max(years))
+    res.basic = basic
+
+    # ---------- 7. 公司名兜底 ----------
+    try:
+        _fill_company_from_text(res.work, texts, log=log)
+    except Exception:
+        pass
+
+    # ---------- 8. 完整性与原因 ----------
+    try:
+        import completeness as _cmp
+        ok, missing, nice = _cmp.check({
+            "name": res.name, "basic": res.basic, "education": res.education,
+            "work": res.work, "collection": {"complete": res.complete}})
+        res.missing = missing
+        if missing:
+            res.review_reason = _cmp.summarize(missing)
+            log(f"  采集仍有缺失：{res.review_reason}")
+        elif nice:
+            log(f"  采集完整（建议补充：{'、'.join(nice[:3])}）")
+    except Exception as exc:
+        log(f"  [warn] 完整性检查失败：{exc}")
+
+    res.work_state = "present" if res.work else "unknown"
+    res.shots = [(i, c) for i, c in enumerate(crops)]
+    res.stopped_reason = "快速读法完成"
+    log(f"  结果：工作 {len(res.work)} 条 / 教育 {len(res.education)} 条")
+    return res
+
 def _fill_company_from_text(work: list[dict], texts: list[str], log=print) -> int:
     """公司名缺失时，从 OCR 原文里把"公司名 + 职位"那一行捞回来。
 

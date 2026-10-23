@@ -623,8 +623,11 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                         except Exception:
                             mode = "ocr"
                     if mode == "vlm":
-                        rr = resume_reader.read_resume_vlm(rect, p2["wides"][0], log=print,
-                                                           name_hint=card_name)
+                        import vlm as _vlm_cfg
+                        _fast = bool(_vlm_cfg.load_config().get("fast"))
+                        _fn = (resume_reader.read_resume_fast if _fast
+                               else resume_reader.read_resume_vlm)
+                        rr = _fn(rect, p2["wides"][0], log=print, name_hint=card_name)
                     else:
                         rr = resume_reader.read_resume(rect, p2["wides"][0], log=print)
 
