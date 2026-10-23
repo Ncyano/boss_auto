@@ -301,9 +301,15 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     exclusions: list[str] = []     # 按知识库不得使用，仅记录
 
     # ---------- Q01 采集质量 ----------
-    if collection.get("needs_review") or collection.get("conflicts"):
+    # 姓名问题只作身份核验，不阻断业务判定（用户明确要求）
+    name_issues = [x for x in (resume.get("name_issues") or []) if x]
+    raw_reasons = [x for x in (collection.get("review_reason") or []) if x]
+    real_reasons = [x for x in raw_reasons if "姓名" not in x]
+    real_conflicts = [c for c in (collection.get("conflicts") or []) if "姓名" not in str(c)]
+
+    if real_reasons or real_conflicts:
         reviews.append("采集待复核：" + "；".join(
-            collection.get("review_reason") or [f"{len(collection.get('conflicts') or [])} 处冲突"]))
+            real_reasons or [f"{len(real_conflicts)} 处冲突"]))
 
     # ---------- 教育 ----------
     first = education[0] if education else None

@@ -110,6 +110,8 @@ def screen_collection(row: dict, rules: dict) -> dict:
     if review_flag:
         raw_reasons = [r.strip() for r in str(row.get("复核原因", "")).split("；") if r.strip()]
         for reason in raw_reasons:
+            if "姓名" in reason:
+                continue            # 姓名只作身份核验，不阻断业务判定
             if reason in BUSINESS_REASONS and _has_section(sections, "work", "工作经历"):
                 continue            # 章节读到了 -> 确实没写经历，交给业务规则
             problems.append(reason)
@@ -124,7 +126,7 @@ def screen_collection(row: dict, rules: dict) -> dict:
         if real_missing:
             problems.append(f"采集缺失：{'；'.join(real_missing)[:60]}")
 
-    # 跨屏冲突（含姓名分歧）一律不进后续流程
+    # 跨屏冲突（不含姓名分歧：姓名只作身份核验，不阻断业务判定）
     try:
         conflicts = int(row.get("冲突数") or 0)
     except (TypeError, ValueError):
@@ -441,6 +443,7 @@ def resume_from_row(row: dict) -> dict:
         },
         "basic": {"age": row.get("年龄"), "education_mode": (row.get("学历性质") or ""),
                   "status": (row.get("求职状态") or "")},
+        "name_issues": [x for x in str(row.get("姓名核验", "") or "").split("；") if x],
         "gap_months": _last_job_gap_months(work),
         "total_work_months": _total_work_months(work),
         "company_1": (row.get("第1家公司") or ""),

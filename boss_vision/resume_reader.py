@@ -116,6 +116,7 @@ class ReadResult:
     missing: list = field(default_factory=list)     # 采集缺失字段（补采后仍缺的）
     name_candidates: list = field(default_factory=list)   # 姓名候选（含来源）
     name_disputed: bool = False                     # 姓名存在分歧
+    name_issues: list = field(default_factory=list) # 姓名诊断（只记录，不阻断判定）
     usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
 
     def as_dict(self) -> dict:
@@ -139,6 +140,7 @@ class ReadResult:
             "missing": self.missing,
             "name_candidates": self.name_candidates,
             "name_disputed": self.name_disputed,
+            "name_issues": self.name_issues,
             "incomplete": self.incomplete,
             "review_reason": self.review_reason,
         }
@@ -731,8 +733,8 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             res.name_candidates = candidates
             if len(set(candidates)) > 1:
                 res.name_disputed = True
-                res.conflicts.append(
-                    f"姓名存在分歧：候选 {'/'.join(candidates)}（暂取 {res.name}）")
+                res.name_issues.append(
+                    f"姓名有分歧：{'/'.join(candidates)}（暂取 {res.name}）")
                 log(f"  ⚠ 姓名分歧：{candidates}，暂取 {res.name}")
             if not res.name:
                 log(f"  [warn] 姓名未识别，票={votes}")
@@ -849,9 +851,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     vlm.merge_screens(work, parts0["work"])
                     if parts0["education"] and not education:
                         education.extend(parts0["education"])
-                    if work:
-                        log(f"    补回工作 {len(work)} 段")
-                        break
+                    log(f"    第 {st0 + 1} 屏补回工作 {len(parts0['work'])} 段（累计 {len(work)}）")
                 except Exception as exc:
                     log(f"    [warn] 重读失败：{exc}")
     except Exception as exc:
@@ -911,8 +911,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 if fixed != school_now:
                     education[0]["school"] = fixed
                     education[0]["school_raw"] = school_now
-                    if note:
-                        res.conflicts.append(note)
+                    education[0]["school_corrected"] = note
     except Exception as exc:
         log(f"  [warn] 校名二次校验失败：{exc}")
 
@@ -1018,7 +1017,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
 
     # 复核判定（与 OCR 版一致）
     if not res.name:
-        res.review_reason = "姓名未识别"
+        res.name_issues.append("姓名未识别")
     if res.name_disputed:
         res.review_reason = ((res.review_reason + "；") if res.review_reason else "") + \
             f"姓名有分歧（候选 {'/'.join(res.name_candidates)}）"

@@ -65,9 +65,15 @@ def screen_row_of(row: dict) -> dict:
         for suffix in ("公司", "职位", "起止"):
             key = f"第{i}家{suffix}"
             out[key] = row.get(key, "")
-    out.update({"采集完成": row.get("采集完整") or "是", "需复核": "否",
-                "复核原因": "", "冲突数": 0,
-                "缺失字段": row.get("缺失字段", "")})
+    missing = row.get("缺失字段", "") or ""
+    out.update({
+        "采集完成": row.get("采集完整") or ("是" if not missing else "否"),
+        "需复核": row.get("需复核") or ("是" if missing else "否"),
+        "复核原因": row.get("复核原因") or missing,
+        "冲突数": row.get("冲突数") or 0,
+        "缺失字段": missing,
+        "姓名核验": row.get("姓名核验", "") or "",
+    })
     return out
 
 
