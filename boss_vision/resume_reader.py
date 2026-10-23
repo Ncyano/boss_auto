@@ -1264,6 +1264,12 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 4,
     res.education = parts.get("education") or []
     res.basic = dict(data.get("basic") or {})
     res.name = (data.get("name") or "").strip()
+    # 列表卡片上的姓名更可信：结构化常常把正文里的其他人名当姓名
+    if name_hint and vlm.is_plausible_name(name_hint):
+        if res.name and res.name != name_hint:
+            log(f"  姓名以列表卡片为准：{name_hint}（结构化读成 {res.name}）")
+            res.name_issues.append(f"姓名结构化读作 {res.name}，以卡片 {name_hint} 为准")
+        res.name = name_hint
     res.complete = bool(res.work or res.education)
 
     # ---------- 5. 姓名：结构里没有就用紧贴裁剪补 ----------
@@ -1276,8 +1282,14 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 4,
         except Exception as exc:
             log(f"  [warn] 姓名补读失败：{exc}")
 
-    # ---------- 6. 学习形式 / 毕业年份兜底 ----------
+    # ---------- 6. 年龄 / 学习形式 / 状态：先按文本兜底 ----------
     basic = res.basic
+    try:
+        for k, v in _basic_from_text(full_text).items():
+            if not basic.get(k):
+                basic[k] = v
+    except Exception:
+        pass
     if not basic.get("education_mode"):
         for crop in crops:
             try:
@@ -1322,6 +1334,25 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 4,
     res.stopped_reason = "快速读法完成"
     log(f"  结果：工作 {len(res.work)} 条 / 教育 {len(res.education)} 条")
     return res
+
+def _basic_from_text(text: str) -> dict:
+    """从 OCR 全文里抓年龄、学习形式、求职状态（比模型稳定）。"""
+    out: dict = {}
+    if not text:
+        return out
+    m = __import__("re").search(r"([1-9]\d?)\s*岁", text)
+    if m:
+        age = int(m.group(1))
+        if 14 <= age <= 70:
+            out["age"] = age
+    for kw in ("非全日制", "全日制", "统招"):
+        if kw in text:
+            out["education_mode"] = "非全日制" if kw == "非全日制" else "全日制"
+            break
+    m = __import__("re").search(r"(离职|在职|在校)[-－·\s]*(随时到岗|月内到岗|考虑机会|看看机会)?", text)
+    if m:
+        out["status"] = (m.group(0) or "").strip()
+    return out
 
 def _fill_company_from_text(work: list[dict], texts: list[str], log=print) -> int:
     """公司名缺失时，从 OCR 原文里把"公司名 + 职位"那一行捞回来。

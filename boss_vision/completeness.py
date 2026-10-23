@@ -96,6 +96,12 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
                     if not _has_duty(item):
                         (missing if not has_any_duty else nice).append(f"第{idx}家职责")
                     continue
+                if key == "title" and _blank(item.get("title")):
+                    # 公司/起止/职责都有，只是缺职位名 -> 可判定，只提示
+                    if not (_blank(item.get("company")) or _blank(item.get("period"))
+                            or not _has_duty(item)):
+                        nice.append(f"第{idx}家职位")
+                        continue
                 if key == "company" and _blank(item.get("company")):
                     # 公司名缺失但有职位+起止+职责：可判定，只提示（同行检查未覆盖该段）
                     if not (_blank(item.get("title")) or _blank(item.get("period"))
