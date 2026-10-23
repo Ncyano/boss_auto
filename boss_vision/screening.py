@@ -112,6 +112,8 @@ def screen_collection(row: dict, rules: dict) -> dict:
         for reason in raw_reasons:
             if "姓名" in reason:
                 continue            # 姓名只作身份核验，不阻断业务判定
+            if "工作经历 0 条" in reason or "工作经历0条" in reason:
+                continue            # 确实没写经历 -> 交给 W06 业务规则判，不算采集失败
             if reason in BUSINESS_REASONS and _has_section(sections, "work", "工作经历"):
                 continue            # 章节读到了 -> 确实没写经历，交给业务规则
             problems.append(reason)
@@ -120,6 +122,7 @@ def screen_collection(row: dict, rules: dict) -> dict:
         problems.append("采集未完成")
 
     # 补采后仍缺失的字段（姓名/学校/学历/职责/公司名…）
+    # 「工作经历 0 条」是业务事实，不是字段缺失
     missing_raw = str(row.get("缺失字段", "") or "").strip()
     if missing_raw:
         real_missing = [m for m in missing_raw.split("；") if m and "姓名" not in m]

@@ -307,6 +307,12 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     real_reasons = [x for x in raw_reasons if "姓名" not in x]
     real_conflicts = [c for c in (collection.get("conflicts") or []) if "姓名" not in str(c)]
 
+    # 「工作经历 0 条」不是采集失败：教育读到了就按 W06（确实无经历）走业务判定
+    zero_work_only = bool(real_reasons) and all("工作经历 0 条" in r or "工作经历0条" in r
+                                                for r in real_reasons)
+    if zero_work_only and education:
+        real_reasons = []
+
     if real_reasons or real_conflicts:
         reviews.append("采集待复核：" + "；".join(
             real_reasons or [f"{len(real_conflicts)} 处冲突"]))
@@ -359,7 +365,8 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
                 pass
 
     # ---------- W06 明确没有工作经历 ----------
-    if not work and not collection.get("needs_review"):
+    zero_review_only = (not real_reasons and not real_conflicts)
+    if not work and (not collection.get("needs_review") or zero_review_only):
         count = collection.get("work_count")
         try:
             count_int = int(count) if count not in (None, "") else None
