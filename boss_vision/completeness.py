@@ -96,6 +96,12 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
                     if not _has_duty(item):
                         (missing if not has_any_duty else nice).append(f"第{idx}家职责")
                     continue
+                if key == "company" and _blank(item.get("company")):
+                    # 公司名缺失但有职位+起止+职责：可判定，只提示（同行检查未覆盖该段）
+                    if not (_blank(item.get("title")) or _blank(item.get("period"))
+                            or not _has_duty(item)):
+                        nice.append(f"第{idx}家公司名")
+                        continue
                 if _blank(item.get(key)):
                     label = {"company": "公司名", "title": "职位", "period": "起止"}[key]
                     missing.append(f"第{idx}家{label}")
@@ -179,8 +185,17 @@ def self_test() -> int:
 
     no_company = dict(full, work=[{"company": "", "title": "客服", "period": "2023.07",
                                    "descriptions": ["做事"]}])
-    _, miss5, _ = check(no_company)
-    check_("缺公司名 -> 不完整", "第1家公司名" in miss5, str(miss5))
+    ok5, miss5, nice5 = check(no_company)
+    # 职位/起止/职责都有时，缺公司名只作提示（仍可判定，同行检查未覆盖该段）
+    check_("缺公司名但有职位职责 -> 只提示",
+           ok5 and not miss5 and any("公司名" in x for x in nice5),
+           f"missing={miss5} nice={nice5}")
+
+    # 只剩职位、其余都空 -> 与"标签行"无法区分，按标签行忽略（不阻断）
+    bare = dict(full, work=[{"company": "", "title": "客服", "period": "",
+                             "descriptions": []}])
+    ok6, miss6, _ = check(bare)
+    check_("只有职位（像标签行）-> 不阻断", ok6, str(miss6))
 
     no_age = {k: v for k, v in full.items() if k != "basic"}
     good6, miss6, nice6 = check(no_age)
