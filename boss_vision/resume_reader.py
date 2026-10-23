@@ -983,6 +983,14 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             return {"name": res.name, "basic": res.basic, "education": education,
                     "work": work, "collection": {"complete": res.complete}}
 
+        try:
+            _n_fixed = _fill_company_from_text(work, [t for _st, t in text_all]
+                                               if "text_all" in locals() else [],
+                                               log=log)
+            # work 是原地修改的，不需要重建
+        except Exception as exc:
+            log(f"  [warn] 公司名兜底失败：{exc}")
+
         ok, missing, nice = _cmp.check(_snapshot())
         lacks_duty = any("职责" in m for m in missing)
         if lacks_duty and max_steps > 0:
@@ -1004,8 +1012,27 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             except Exception as exc:
                 log(f"  [warn] 放大重读失败：{exc}")
 
+        try:
+            _n_fixed = _fill_company_from_text(work, [t for _st, t in text_all]
+                                               if "text_all" in locals() else [],
+                                               log=log)
+            # work 是原地修改的，不需要重建
+        except Exception as exc:
+            log(f"  [warn] 公司名兜底失败：{exc}")
+
         ok, missing, nice = _cmp.check(_snapshot())
         res.missing = missing
+
+        # 用最终结果重写复核原因：读的过程中报的"缺公司名"可能已经被补采解决，
+        # 不重算会让已经完整的简历仍被判采集不完整
+        keep = [x for x in (res.review_reason or "").split("；")
+                if x and not any(k in x for k in
+                                 ("缺公司", "缺职位", "缺起止", "缺职责", "缺学校", "缺学历",
+                                  "采集缺失", "无法归属", "工作经历 0 条", "姓名"))]
+        if missing:
+            keep.append(_cmp.summarize(missing))
+        res.review_reason = "；".join(dict.fromkeys(keep))
+
         if missing:
             log(f"  采集仍有缺失：{_cmp.summarize(missing)}")
         elif nice:
@@ -1145,6 +1172,40 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
     if len(candidates or []) == 1:
         return candidates[0]
     return None
+
+def _fill_company_from_text(work: list[dict], texts: list[str], log=print) -> int:
+    """公司名缺失时，从 OCR 原文里把"公司名 + 职位"那一行捞回来。
+
+    结构化模型偶尔会漏掉公司名（尤其「XX有限公司」和职位挤在一行时），
+    而公司名就在原文里，按职位名反查那一行即可。
+    """
+    if not work or not texts:
+        return 0
+    joined = "\n".join(texts)
+    lines = [ln.strip() for ln in joined.splitlines() if ln.strip()]
+    fixed = 0
+    for item in work:
+        if (item.get("company") or "").strip():
+            continue
+        title = (item.get("title") or "").strip()
+        if not title:
+            continue
+        for ln in lines:
+            if title not in ln:
+                continue
+            head = ln.split(title)[0].strip(" |·-—:：\t")
+            head = head.replace("工作经历", "").strip()
+            if len(head) < 3:
+                continue
+            # 只接受"像公司名"的前缀：以公司/集团/厂/店/中心/学校/医院 结尾，或含"有限公司"
+            if not any(k in head for k in ("公司", "集团", "工作室", "事务所", "中心",
+                                           "学校", "学院", "医院", "政府", "合作社", "厂")):
+                continue
+            item["company"] = head[:40]
+            fixed += 1
+            log(f"    公司名从原文补回：{item['company']}（{title}）")
+            break
+    return fixed
 
 def _verify_empty_work_block(crop) -> tuple[bool, str]:
     """回看截图确认「工作经历」标题下方到下一个标题之间确实没有文字。
