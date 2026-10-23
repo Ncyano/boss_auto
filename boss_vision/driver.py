@@ -711,7 +711,16 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     })
                     if rr.incomplete:
                         print(f"     ⚠ 需复核：{rr.review_reason}")
-                        save_shots(rr.shots, handled + 1)
+                    # 截图：默认只在需复核时留（省磁盘）；config.vision.save_shots="always" 时全留
+                    try:
+                        import vlm as _vlm_s
+                        _cfg_s = _vlm_s.load_config()
+                        if rr.shots and (rr.incomplete or
+                                         str(_cfg_s.get("save_shots") or "").lower() == "always"):
+                            save_shots(rr.shots, handled + 1)
+                    except Exception:
+                        if rr.shots and rr.incomplete:
+                            save_shots(rr.shots, handled + 1)
                     # 弹窗里的姓名不合法（抓到标签/职位）时，改用列表卡片上的姓名
                     try:
                         import vlm as _vlm
