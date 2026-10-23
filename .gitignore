@@ -72,3 +72,8 @@ data/运营助理-数据集.备份*.csv
 data/parse-new.log
 data/运营助理-数据集.csv.bak
 data/运营助理-数据集.去重前.csv
+
+# 人事表格（含候选人隐私，绝不入库）
+未命名表格*.xlsx
+*.xlsx
+!data/*.xlsx.template
