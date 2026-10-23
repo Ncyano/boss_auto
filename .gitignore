@@ -63,3 +63,10 @@ config.local.json
 # 候选人数据集（含姓名/学历/经历）
 data/运营助理-数据集.csv
 data/运营助理-数据集报告.txt
+
+# 新人事表格清洗产物（含候选人隐私，绝不入库）
+data/新人事-运营助理.csv
+data/新人事截图/
+data/新人事-解析.csv
+data/运营助理-数据集.备份*.csv
+data/parse-new.log
