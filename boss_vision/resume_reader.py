@@ -1013,17 +1013,30 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
 
     # ---- 工作经历状态：读到 / 明确没有 / 未确认 ----
     try:
-        joined = "\n".join(text_all) if "text_all" in dir() else str(getattr(res, "text", "") or "")
-        has_work_header = ("工作经历" in joined) or ("实习经历" in joined)
-        has_edu_header = ("教育经历" in joined)
+        joined = "\n".join(text_all) if "text_all" in locals() else str(getattr(res, "text", "") or "")
         if work:
             res.work_state = "present"
-        elif has_edu_header and (has_work_header or not has_work_header):
-            # 整份简历读到了教育区，且没有任何工作条目：
-            # 有「工作经历」标题 -> 标题下确实空；没有标题 -> 简历本身就没这块
-            res.work_state = "explicit_none"
         else:
-            res.work_state = "unknown"
+            # 只有"实证"才判 explicit_none，其余一律 unknown：
+            #   a) 文本里明确写了没有工作经历
+            #   b) 有「工作经历」标题，且紧跟着另一个区块标题（说明该区块是空的）
+            #   c) 整份简历根本没有「工作经历」标题，但读到了教育区且没有其他区块内容
+            empty_marks = ("无工作经历", "暂无工作经历", "没有工作经历", "无工作经验", "暂无工作经验")
+            explicit = any(m in joined for m in empty_marks)
+
+            if not explicit:
+                heads = ("工作经历", "实习经历", "教育经历", "项目经历", "校园经历",
+                         "专业技能", "资格证书", "所获荣誉", "自我评价")
+                lines = [ln.strip() for ln in joined.splitlines() if ln.strip()]
+                for i, ln in enumerate(lines):
+                    if ln.startswith(("工作经历", "实习经历")):
+                        nxt = [j for j in range(i + 1, len(lines))
+                               if lines[j].startswith(heads[2:])]
+                        if nxt and (nxt[0] - i) <= 2:      # 标题后紧跟别的区块
+                            explicit = True
+                        break
+
+            res.work_state = "explicit_none" if explicit else "unknown"
         if res.work_state == "explicit_none" and not work:
             log(f"  工作经历：确认无（教育区已读到，工作经历区块"
                 f"{'存在但为空' if has_work_header else '不存在'}）")

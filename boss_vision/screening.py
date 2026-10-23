@@ -120,6 +120,10 @@ def screen_collection(row: dict, rules: dict) -> dict:
 
     if completed == "否":
         problems.append("采集未完成")
+    elif completed == "未知":
+        # 只有线上采集的记录会带这两个字段；数据集老记录没这列，保持原行为
+        if (row.get("工作经历状态") or row.get("姓名核验") or row.get("缺失字段") is not None):
+            problems.append("采集状态未知（无法确认完整性）")
 
     # 补采后仍缺失的字段（姓名/学校/学历/职责/公司名…）
     # 「工作经历 0 条」是业务事实，不是字段缺失
@@ -455,7 +459,14 @@ def resume_from_row(row: dict) -> dict:
         "basic": {"age": row.get("年龄"), "education_mode": (row.get("学历性质") or ""),
                   "status": (row.get("求职状态") or "")},
         "name_issues": [x for x in str(row.get("姓名核验", "") or "").split("；") if x],
-        "work_state": row.get("工作经历状态", "") or "",
+        "work_state": row.get("工作经历状态", "") or "",       # 兼容顶层读取
+        "collection": {
+            "complete": str(row.get("采集完成", "")) != "否",
+            "needs_review": str(row.get("需复核", "")) == "是",
+            "review_reason": [x for x in str(row.get("复核原因", "") or "").split("；") if x],
+            "conflicts": [],
+            "work_state": row.get("工作经历状态", "") or "",   # 知识库从这里读
+        },
         "gap_months": _last_job_gap_months(work),
         "total_work_months": _total_work_months(work),
         "company_1": (row.get("第1家公司") or ""),

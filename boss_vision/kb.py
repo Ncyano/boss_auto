@@ -368,7 +368,8 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     # W06 只在"明确确认没有工作经历"时触发；
     # 解析结果为空但没读到教育/区块，属于「未确认」，按采集不完整处理，不进负样本
     if not work:
-        state = str(collection.get("work_state") or "").strip()
+        state = str(collection.get("work_state")
+                    or resume.get("work_state") or "").strip()
         if state == "explicit_none":
             failures.append({"rule": "W06", "reason": "确认无工作经历",
                              "evidence": "简历教育区已读到，工作经历区块为空或不存在"})
