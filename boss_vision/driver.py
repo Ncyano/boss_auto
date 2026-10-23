@@ -583,6 +583,18 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
 
             winenv.click(ox + cx, oy + cy)
             time.sleep(1.0)
+            # 卡片姓名必须在点开前读（点开后再截屏会读到简历正文）
+            pre_card_name = ""
+            try:
+                import resume_reader as _rr_pre
+                import vlm as _vlm_pre
+                card_idx_pre = picked[0] if isinstance(picked, tuple) else picked
+                _nm = _rr_pre.card_name(winenv.grab_window(rect), p["cards"][card_idx_pre])
+                if _nm and _vlm_pre.is_plausible_name(_nm):
+                    pre_card_name = _nm
+            except Exception as exc:
+                print(f"     [warn] 卡片姓名读取失败：{exc}")
+
             opened = False
             p2 = None
             for _ in range(8):
@@ -599,16 +611,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 import resume_reader
 
                 try:
-                    card_name = ""
-                    try:
-                        import resume_reader as _rr
-                        card_idx = picked[0] if isinstance(picked, tuple) else picked
-                        card_name = _rr.card_name(winenv.grab_window(rect),
-                                                  p["cards"][card_idx])
-                        if card_name:
-                            print(f"     卡片姓名: {card_name}")
-                    except Exception as exc:
-                        print(f"     [warn] 卡片姓名读取失败：{exc}")
+                    card_name = (pre_card_name or "").strip()
+                    if card_name:
+                        print(f"     卡片姓名: {card_name}")
 
                     mode = reader
                     if mode == "auto":
@@ -715,7 +720,8 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                         rr.review_reason = ((rr.review_reason + "；") if rr.review_reason else "") + \
                             "姓名取自列表卡片"
                     elif rr.name and card_name and rr.name != card_name:
-                        rr.conflicts.append(f"姓名不一致：卡片 {card_name} / 简历 {rr.name}")
+                        rr.name_issues.append(
+                            f"姓名不一致：卡片 {card_name} / 简历 {rr.name}")
                     record["card_name"] = card_name
                     print(f"     {rr.name or '(未识别姓名)'}：滚了 {rr.steps} 屏，读到 {len(rr.text)} 字；"
                           f"工作经历 {len(rr.work)} 条 / 教育经历 {len(rr.education)} 条；"

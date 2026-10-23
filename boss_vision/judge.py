@@ -29,7 +29,7 @@ DEFAULT_CONFIG = {
     "api_key_env": "DEEPSEEK_API_KEY",
     "api_key": "",
     "temperature": 0,
-    "max_tokens": 800,
+    "max_tokens": 2500,
     "timeout": 120,
     "retries": 3,
     "thinking": "disabled",
@@ -107,7 +107,7 @@ def _post(cfg: dict, messages: list[dict], key: str) -> dict:
     payload = {
         "model": cfg["model"],
         "temperature": cfg.get("temperature", 0),
-        "max_tokens": cfg.get("max_tokens", 800),
+        "max_tokens": cfg.get("max_tokens", 2500),
         "response_format": {"type": "json_object"},
         # deepseek 默认开启思考模式；分类任务不需要思维链，关掉更快更稳（且思考模式下 temperature 不生效）
         "thinking": {"type": str(cfg.get("thinking", "disabled"))},
@@ -282,12 +282,15 @@ def structure_text(text: str, cfg: dict | None = None, kb: dict | None = None) -
     if not key:
         raise RuntimeError("没有配置 DEEPSEEK_API_KEY")
 
+    # 结构化输出较长，单独给足 token（原配置会被截断成非法 JSON）
+    local_cfg = dict(cfg)
+    local_cfg["max_tokens"] = max(int(cfg.get("max_tokens") or 0), 2500)
     messages = [{"role": "system", "content": STRUCTURE_PROMPT},
                 {"role": "user", "content": text[:8000]}]
     last = ""
     for attempt in range(int(cfg.get("retries", 2)) + 1):
         try:
-            resp = _post(cfg, messages, key)
+            resp = _post(local_cfg, messages, key)
             raw = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "")
             data = extract_json(raw)
             if data and (data.get("sections") is not None or data.get("name")):
