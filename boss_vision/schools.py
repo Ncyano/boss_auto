@@ -136,13 +136,31 @@ def lookup(name: str, fuzzy_min: float = 0.82) -> dict:
     if contained:
         return contained
 
-    # 模糊匹配只给候选，不直接判定
-    near = difflib.get_close_matches(key, records.keys(), n=3, cutoff=fuzzy_min)
+    # 模糊匹配：唯一候选时按"写法差异"认定，多个候选则只给候选不判定
+    near = difflib.get_close_matches(key, records.keys(), n=5, cutoff=fuzzy_min)
+    cand_names = [records[k]["学校名称"] for k in near]
+
+    if len(near) == 1:
+        name = near[0]
+        ratio = difflib.SequenceMatcher(None, key, name).ratio()
+        rec = records[name]
+        return {
+            "listed": True,
+            "matched": rec["学校名称"],
+            "province": rec["所在省份"],
+            "level": rec["办学层次"],
+            "list": rec.get("_list", "general"),
+            "method": "fuzzy_unique",
+            "note": (f"名单里只有「{rec['学校名称']}」与它相近（相似度 {ratio:.2f}），"
+                     f"按写法差异认定，建议核对简历原图"),
+            "candidates": cand_names,
+        }
+
     return {
         "listed": False,
         "matched": "",
         "method": "fuzzy" if near else "none",
-        "candidates": [records[k]["学校名称"] for k in near],
+        "candidates": cand_names,
     }
 
 
