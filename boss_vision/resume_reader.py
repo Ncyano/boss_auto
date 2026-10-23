@@ -772,7 +772,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 for field in ("school", "major", "degree", "period"):
                     if not (same.get(field) or "").strip() and (e.get(field) or "").strip():
                         same[field] = e[field]
-        text_all.append(str(raw.get("raw") or ""))
+        text_all.append((step, str(raw.get("raw") or "")))
         res.screen_count = step + 1
         u = raw.get("usage") or {}
         usage_total["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
@@ -1015,14 +1015,18 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
 
     # ---- 工作经历状态：读到 / 明确没有 / 未确认 ----
     try:
-        joined = "\n".join(text_all) if "text_all" in locals() else str(getattr(res, "text", "") or "")
+        if "text_all" in locals():
+            joined = "\n".join(t for _st, t in text_all)
+        else:
+            joined = str(getattr(res, "text", "") or "")
+            text_all = []
+
         if work:
             res.work_state = "present"
         else:
-            # 只有"实证"才判 explicit_none，其余一律 unknown：
-            #   a) 文本里明确写了没有工作经历
-            #   b) 有「工作经历」标题，且紧跟着另一个区块标题（说明该区块是空的）
-            #   c) 整份简历根本没有「工作经历」标题，但读到了教育区且没有其他区块内容
+            # explicit_none 只接受两类证据：
+            #   a) 简历本人明写"无工作经历/暂无工作经验"
+            #   b) 标题紧邻 —— 还必须回看该屏截图用本地 OCR 复核确认中间确实为空
             empty_marks = ("无工作经历", "暂无工作经历", "没有工作经历", "无工作经验", "暂无工作经验")
             work_evidence = ""
             explicit = False
@@ -1035,17 +1039,26 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             if not explicit:
                 heads = ("工作经历", "实习经历", "教育经历", "项目经历", "校园经历",
                          "专业技能", "资格证书", "所获荣誉", "自我评价")
-                lines = [ln.strip() for ln in joined.splitlines() if ln.strip()]
-                for i, ln in enumerate(lines):
-                    if ln.startswith(("工作经历", "实习经历")):
-                        nxt = [j for j in range(i + 1, len(lines))
-                               if lines[j].startswith(heads[2:])]
-                        # 必须紧邻：中间只要有一行内容（哪怕结构化没提取出来），
-                        # 就不能判"空区块"，一律保持 unknown
-                        if nxt and (nxt[0] - i) == 1:
-                            explicit = True
-                            work_evidence = f"「{lines[i][:6]}」区块为空（紧跟「{lines[nxt[0]][:6]}」）"
-                        break
+                for step_i, txt in text_all:
+                    lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+                    cand = None
+                    for i, ln in enumerate(lines):
+                        if ln.startswith(("工作经历", "实习经历")):
+                            nxt = [j for j in range(i + 1, len(lines))
+                                   if lines[j].startswith(heads[2:])]
+                            if nxt and (nxt[0] - i) == 1:
+                                cand = (lines[i][:6], lines[nxt[0]][:6])
+                            break
+                    if not cand:
+                        continue
+                    # 回看截图：本地 OCR 复核标题之间是否真的没有内容
+                    crop_map = {st: c for st, c in res.shots}
+                    ok, why = _verify_empty_work_block(crop_map.get(step_i))
+                    log(f"  第 {step_i + 1} 屏「工作经历」区块疑似为空，截图复核：{why}")
+                    if ok:
+                        explicit = True
+                        work_evidence = f"「{cand[0]}」区块为空，截图已复核（紧跟「{cand[1]}」）"
+                    break
 
             res.work_state = "explicit_none" if explicit else "unknown"
         res.work_evidence = work_evidence if res.work_state == "explicit_none" else ""
@@ -1130,6 +1143,44 @@ def _match_entry(target: dict, candidates: list[dict]) -> dict | None:
     if len(candidates or []) == 1:
         return candidates[0]
     return None
+
+def _verify_empty_work_block(crop) -> tuple[bool, str]:
+    """回看截图确认「工作经历」标题下方到下一个标题之间确实没有文字。
+
+    只看视觉模型输出的文字不可靠（它可能整块漏读），所以用本地 OCR（带坐标）
+    复核一遍。任何不确定的情况都返回 False，让调用方保持 unknown。
+    """
+    if crop is None:
+        return False, "没有对应截图，保持 unknown"
+    try:
+        engine = vision.load_ocr()
+        if engine is None:
+            return False, "本地 OCR 不可用，保持 unknown"
+        items = vision.ocr_crop(engine, crop, vision.Rect(0, 0, crop.shape[1], crop.shape[0]))
+        rows = sorted(items, key=lambda it: (it["box"][1], it["box"][0]))
+        heads = ("教育经历", "项目经历", "校园经历", "专业技能", "资格证书",
+                 "所获荣誉", "自我评价", "工作经历", "实习经历")
+        idx_work = None
+        for i, it in enumerate(rows):
+            if (it.get("text") or "").strip().startswith(("工作经历", "实习经历")):
+                idx_work = i
+                break
+        if idx_work is None:
+            return False, "截图里没找到「工作经历」标题，保持 unknown"
+        idx_next = None
+        for j in range(idx_work + 1, len(rows)):
+            if (rows[j].get("text") or "").strip().startswith(heads):
+                idx_next = j
+                break
+        if idx_next is None:
+            return False, "「工作经历」后面没找到下一个区块标题，保持 unknown"
+        between = [r for r in rows[idx_work + 1: idx_next] if (r.get("text") or "").strip()]
+        if between:
+            return False, f"标题之间有 {len(between)} 行内容，保持 unknown"
+        return True, "标题之间确认为空"
+    except Exception as exc:
+        return False, f"截图复核失败（{exc}），保持 unknown"
+
 
 def _merge_usage(a: dict | None, b: dict | None) -> dict:
     """合并两次调用的 token 用量（OCR + 结构化）。"""
