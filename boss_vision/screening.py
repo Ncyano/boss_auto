@@ -212,6 +212,36 @@ def screen_education(row: dict, rules: dict) -> dict:
             "school_list": school_list, "school_matched": res.get("matched", "")}
 
 
+EXCLUDE_DUTY_KEYWORDS = ("酒店前台", "前台", "人力资源")
+
+
+def strip_excluded_duties(work: list[dict], keywords=None) -> list[dict]:
+    """去掉不属于运营/客户沟通的职责行（人事口径：酒店前台、前台、人力资源）。"""
+    kws = tuple(keywords or EXCLUDE_DUTY_KEYWORDS)
+    out = []
+    for w in work or []:
+        if not isinstance(w, dict):
+            continue
+        desc = [d for d in (w.get("descriptions") or [])
+                if not any(k in str(d) for k in kws)]
+        title = str(w.get("title") or "")
+        pure_other = any(k in title for k in kws) and not any(
+            x in title for x in ("运营", "客服", "电商", "直播", "销售", "社群"))
+        w2 = dict(w)
+        w2["descriptions"] = desc
+        if pure_other:
+            w2["_excluded"] = True     # 整段都不算相关经历
+        out.append(w2)
+    return out
+
+def _excluded_title(title: str) -> bool:
+    """整段岗位属于"酒店前台/前台/人力资源"这类，不算运营/客户沟通经历。"""
+    t = str(title or "")
+    if not any(k in t for k in EXCLUDE_DUTY_KEYWORDS):
+        return False
+    return not any(x in t for x in ("运营", "客服", "电商", "直播", "销售", "社群"))
+
+
 def work_text(row: dict) -> str:
     """把各段工作经历拼成模型输入文本（职位 + 时间 + 职责，公司名不进特征）。
 
@@ -228,6 +258,8 @@ def work_text(row: dict) -> str:
         content = (row.get(f"第{i}家工作内容") or "").strip()
         company = (row.get(f"第{i}家公司") or "").strip()
         if not (title or content or company):
+            continue
+        if _excluded_title(title):          # 酒店前台/前台/人力资源 整段不参与判定
             continue
         head = " ".join(x for x in (title, period) if x)
         parts.append(f"{head}：{content}" if content else head)
