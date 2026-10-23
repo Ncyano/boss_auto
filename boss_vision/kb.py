@@ -471,18 +471,10 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     failures.extend(_check_school_work_overlap(education, work, params_of(kb, "P06")))
 
     min_months = int(params_of(kb, "P01").get("min_months", 6))
-    # 人事口径：看的是"相关岗位"累计月数（运营/客服/电商/销售…），不是全部工龄
+    # 三种情况分开处理：相关经验已确认 / 相关经验为零 / 时间无法核实
     rel = relevant_months(work, (params_of(kb, "W07") or {}).get("prefer_titles") or [])
     months = resume.get("total_work_months")
-    if rel:
-        if rel < min_months:
-            failures.append({"rule": "P01",
-                             "reason": f"相关岗位累计 {rel} 个月，不足 {min_months} 个月",
-                             "evidence": f"相关经验 {rel} 个月"})
-        else:
-            advisories.append(f"相关岗位 {rel} 个月（门槛 {min_months}）")
-    elif months is None:
-        # 没有现成的总月数：从工作起止粗算一遍
+    if months is None:
         calc = 0
         for w in work or []:
             sp = _span((w or {}).get("period") or "") if isinstance(w, dict) else None
@@ -491,16 +483,19 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
             elif isinstance(sp, int):
                 calc += sp
         months = calc or None
-        if months is not None and months < min_months:
+
+    if rel > 0:
+        if rel < min_months:
             failures.append({"rule": "P01",
-                             "reason": f"累计相关工作 {months} 个月，不足 {min_months} 个月",
-                             "evidence": f"累计工作月数 {months}"})
-        if months < min_months:
-            failures.append({"rule": "P01",
-                             "reason": f"累计相关工作 {months} 个月，不足 {min_months} 个月",
-                             "evidence": f"累计工作月数 {months}"})
+                             "reason": f"相关岗位累计 {rel} 个月，不足 {min_months} 个月",
+                             "evidence": f"相关经验 {rel} 个月"})
         else:
-            advisories.append(f"累计工作 {months} 个月（门槛 {min_months}）")
+            advisories.append(f"相关岗位 {rel} 个月（门槛 {min_months}）")
+    elif months is not None and months > 0:
+        # 有工作经历但没有一段算"相关岗位"：不直接判死，交给工作经历层看职责
+        advisories.append(f"未识别到相关岗位经历（总工龄 {months} 个月），交工作经历判定")
+    else:
+        advisories.append("工作时间无法解析（P01 未执行）")
 
     # ---------- 结论（二元：只有 合适 / 不合适） ----------
     # 知识库口径：核实不了（采集缺失/学历未知/学校未核实）不能算通过，

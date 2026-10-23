@@ -98,8 +98,18 @@ def main() -> int:
             m = norm_mode(got["basic"].get("education_mode", ""))
             if m != "未知":
                 r["学历性质"] = m
-        if work and int(r.get("工作条数") or 0) < len(work):
-            r["工作条数"] = len(work)
+        # 逐字段合并：即使条数没变，补回的职责/公司/起止也要写回
+        merged_any = False
+        for k in range(1, 11):
+            w = work[k - 1] if k - 1 < len(work) else {}
+            for src, dst in (("company", "公司"), ("title", "职位"), ("period", "起止")):
+                key = f"第{k}家{dst}"
+                new_val = (w.get(src) or "").strip()
+                if new_val and not str(r.get(key) or "").strip():
+                    r[key] = new_val
+                    merged_any = True
+        if work and (merged_any or int(r.get("工作条数") or 0) < len(work)):
+            r["工作条数"] = max(int(r.get("工作条数") or 0), len(work))
             r["教育条数"] = len(edu)
             periods = [w.get("period") or "" for w in work if (w.get("period") or "").strip()]
             r["累计工作月数"] = total_months(periods)
@@ -112,6 +122,19 @@ def main() -> int:
                 r[f"第{k}家公司"] = w.get("company", "")
                 r[f"第{k}家职位"] = w.get("title", "")
                 r[f"第{k}家起止"] = w.get("period", "")
+        # 用"最终要保存的字段"重算完整性，避免 mark 成功但内容没落盘
+        ok2, missing2, nice2 = completeness.check({
+            "name": r.get("姓名", ""),
+            "basic": {"age": r.get("年龄", ""), "education_mode": r.get("学历性质", ""),
+                      "graduation_year": r.get("毕业年份", ""), "status": r.get("求职状态", "")},
+            "education": ([{"school": r.get("学校", ""), "degree": r.get("学历", ""),
+                            "major": r.get("专业", ""), "period": r.get("教育起止", "")}]
+                          if (r.get("学校") or r.get("学历")) else []),
+            "work": [{"company": r.get(f"第{k}家公司", ""), "title": r.get(f"第{k}家职位", ""),
+                      "period": r.get(f"第{k}家起止", "")}
+                     for k in range(1, 11) if (r.get(f"第{k}家公司") or r.get(f"第{k}家职位"))],
+            "collection": {"complete": True}})
+        ok, missing, nice = ok2, missing2, nice2
         r["采集完整"] = "是" if ok else "否"
         r["缺失字段"] = "；".join(missing)
         r["建议补充"] = "；".join(nice)
