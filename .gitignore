@@ -70,3 +70,5 @@ data/新人事截图/
 data/新人事-解析.csv
 data/运营助理-数据集.备份*.csv
 data/parse-new.log
+data/运营助理-数据集.csv.bak
+data/运营助理-数据集.去重前.csv
