@@ -18,6 +18,8 @@ import numpy as np
 
 import vision
 import winenv
+import vlm                       # 读屏主通道（OCR / 视觉模型）
+import judge                     # 文本结构化
 
 # 弹窗正文相对「打招呼」大按钮的偏移（实测：按钮 x=1609 时正文区 800..1574）
 PANEL_LEFT_OFFSET = 809      # 按钮左缘 - 809 = 正文左边界
@@ -1247,8 +1249,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 4,
     # ---------- 4. 一次性结构化 ----------
     data = {}
     try:
-        import judge as _judge
-        st = _judge.structure_text(full_text, _judge.load_config())
+        st = judge.structure_text(full_text, judge.load_config())
         data = (st or {}).get("data") or {}
     except Exception as exc:
         log(f"  [warn] 结构化失败：{exc}")
