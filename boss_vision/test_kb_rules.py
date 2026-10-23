@@ -112,8 +112,9 @@ def test_new_hard_rules() -> None:
 
 def test_review_paths() -> None:
     print("\n[5] 待复核")
-    bad = screening.evaluate_kb(row_of(需复核="是", 复核原因="姓名未识别"))
-    check("采集有问题 -> 不合格（二元口径）", bad["verdict"] == "不合适", bad["verdict"])
+    # 姓名问题只作身份核验，不阻断业务判定
+    name_only = screening.evaluate_kb(row_of(需复核="是", 复核原因="姓名未识别"))
+    check("只有姓名问题 -> 不阻断", name_only["verdict"] != "不合适", name_only["verdict"])
 
     unknown = screening.evaluate_kb(row_of(学历=""))
     check("学历未知 -> 不合格（二元口径）", unknown["verdict"] == "不合适", unknown["verdict"])
