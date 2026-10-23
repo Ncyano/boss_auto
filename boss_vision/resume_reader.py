@@ -1285,6 +1285,20 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
     # ---------- 6. 年龄 / 学习形式 / 状态：先按文本兜底 ----------
     basic = res.basic
     try:
+        if not basic.get("age") and crops:
+            engine = vision.load_ocr()
+            if engine is not None:
+                head = crops[0][:min(300, crops[0].shape[0]), :]
+                items = vision.ocr_crop(engine, head,
+                                        vision.Rect(0, 0, head.shape[1], head.shape[0]))
+                head_text = " ".join((it.get("text") or "") for it in items)
+                got = _basic_from_text(head_text)
+                if got.get("age"):
+                    basic["age"] = got["age"]
+                    log(f"  年龄从头部补回：{got['age']}")
+    except Exception:
+        pass
+    try:
         for k, v in _basic_from_text(full_text).items():
             if not basic.get(k):
                 basic[k] = v
@@ -1365,6 +1379,18 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
         log(f"  [warn] 完整性检查失败：{exc}")
 
     res.work_state = "present" if res.work else "unknown"
+    if not res.work:
+        try:
+            marks = ("无工作经历", "暂无工作经历", "没有工作经历", "无工作经验", "暂无工作经验")
+            hit = next((m for m in marks if m in full_text), "")
+            if hit:
+                res.work_state = "explicit_none"
+                res.work_evidence = f"简历写明「{hit}」"
+            elif "教育经历" in full_text and "工作经历" not in full_text:
+                # 只有教育区、没有工作区：多半是应届生，但没有实证 -> 仍按 unknown
+                res.work_evidence = ""
+        except Exception:
+            pass
     res.shots = [(i, c) for i, c in enumerate(crops)]
     res.stopped_reason = "快速读法完成"
     log(f"  结果：工作 {len(res.work)} 条 / 教育 {len(res.education)} 条")
