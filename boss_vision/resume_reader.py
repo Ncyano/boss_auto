@@ -1308,6 +1308,41 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
                 basic["graduation_year"] = str(max(years))
     res.basic = basic
 
+    # ---------- 6b. 教育区定向补采（校名双读 + 缺失字段放大重读） ----------
+    try:
+        edu_crop = None
+        for i, text in enumerate(texts):
+            if text and ("教育经历" in text):
+                edu_crop = crops[i] if i < len(crops) else None
+                break
+
+        # 校名双读校验：结构读的校名和 OCR 逐字读的不一致时，放大重读投票
+        if edu_crop is not None and res.education:
+            now_school = (res.education[0].get("school") or "").strip()
+            if now_school:
+                fixed, note = _verify_school_name(edu_crop, now_school, cfg, log=log)
+                if fixed and fixed != now_school:
+                    res.education[0]["school"] = fixed
+                    res.education[0]["school_raw"] = now_school
+                    res.education[0]["school_corrected"] = note
+
+        # 教育字段缺失（学校/学历/专业） -> 放大重读该屏一次
+        need_edu = (not res.education) or any(
+            not (res.education[0].get(k) or "").strip() for k in ("school", "degree"))
+        if need_edu and edu_crop is not None:
+            log("  教育信息不全，放大重读教育屏")
+            zoom = dict(cfg)
+            zoom["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+            otext = (vlm.read_screen_text(edu_crop, zoom, log=log) or {}).get("text", "")
+            if otext:
+                st2 = judge.structure_text(otext, judge.load_config())
+                parts2 = vlm.normalize((st2 or {}).get("data", {}).get("sections"))
+                if parts2.get("education"):
+                    vlm.merge_screens(res.education, parts2["education"])
+                    log(f"    补回教育 {len(parts2['education'])} 条")
+    except Exception as exc:
+        log(f"  [warn] 教育区补采失败：{exc}")
+
     # ---------- 7. 公司名兜底 ----------
     try:
         _fill_company_from_text(res.work, texts, log=log)
