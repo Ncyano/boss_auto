@@ -207,7 +207,8 @@ def main(argv: list[str] | None = None) -> int:
 
     def key(r):
         m = r["metrics"]
-        return (m["accuracy"] or 0, m["coverage"] or 0, -r["shots"])
+        # 准确率 > 覆盖率 > 示例数（并列时倾向于真的用上少样本，而不是退回 0 条）
+        return (m["accuracy"] or 0, m["coverage"] or 0, r["shots"])
 
     best = max(val_results, key=key)
     report["stages"].append({"stage": "val", "results": val_results,
