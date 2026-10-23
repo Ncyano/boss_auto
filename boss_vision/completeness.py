@@ -96,9 +96,7 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
                     if not _has_duty(item):
                         (missing if not has_any_duty else nice).append(f"第{idx}家职责")
                     continue
-                    if _blank(item.get("descriptions")):
-                        missing.append(f"第{idx}家职责")
-                elif _blank(item.get(key)):
+                if _blank(item.get(key)):
                     label = {"company": "公司名", "title": "职位", "period": "起止"}[key]
                     missing.append(f"第{idx}家{label}")
 

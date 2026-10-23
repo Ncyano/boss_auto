@@ -358,8 +358,11 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
             try:
                 hit = schools_lookup(school)
                 if not hit.get("listed"):
+                    # 把近似候选写进原因：若是错字/OCR 误读，人工一眼能看出来
+                    cands = [c for c in (hit.get("candidates") or []) if c]
+                    extra = f"（近似候选：{'/'.join(cands[:2])}，请先核对原截图）" if cands else ""
                     failures.append({"rule": "E03",
-                                     "reason": f"校名 {school} 不在教育部名单",
+                                     "reason": f"校名 {school} 不在教育部名单{extra}",
                                      "evidence": f"学校：{school}"})
             except Exception:
                 pass

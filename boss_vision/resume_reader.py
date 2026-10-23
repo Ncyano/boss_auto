@@ -1051,13 +1051,15 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                             break
                     if not cand:
                         continue
-                    # 回看截图：本地 OCR 复核标题之间是否真的没有内容
+                    # 回看截图：用本地 OCR 再读一遍。
+                    # 注意：两套识别都没读到 ≠ 证明区域为空（它们可能漏同一块），
+                    # 所以这里只记录结果、保留截图，**不据此判 explicit_none**，
+                    # 一律保持 unknown，交给人工看截图确认。
                     crop_map = {st: c for st, c in res.shots}
                     ok, why = _verify_empty_work_block(crop_map.get(step_i))
-                    log(f"  第 {step_i + 1} 屏「工作经历」区块疑似为空，截图复核：{why}")
-                    if ok:
-                        explicit = True
-                        work_evidence = f"「{cand[0]}」区块为空，截图已复核（紧跟「{cand[1]}」）"
+                    log(f"  第 {step_i + 1} 屏「工作经历」区块疑似为空，二次识别：{why}"
+                        f"（{'两次都没读到' if ok else '有内容或无法判定'}，"
+                        f"保持 unknown，截图已留档）")
                     break
 
             res.work_state = "explicit_none" if explicit else "unknown"
