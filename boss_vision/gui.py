@@ -80,16 +80,27 @@ class App:
             if hint:
                 ttk.Label(top, text=hint).grid(row=r, column=2, sticky="w", padx=8)
 
-        # 识别方式在开跑前就显示出来（有 key 走视觉模型，没有则退 OCR）
+        # 识别方式在开跑前就显示出来：按 config 里的 pipeline 显示真实链路
         try:
             import vlm as _vlm
             _cfg = _vlm.load_config()
-            if _vlm.api_key(_cfg):
-                _reader_text = f"视觉模型  {_cfg['model']}（更准，约 40~70 秒/人）"
+            _pipeline = str(_cfg.get("pipeline") or "vlm").lower()
+            if not _vlm.api_key(_cfg):
+                _reader_text = "无视觉模型 key（会退回本地 OCR，较慢且易错）"
+            elif _pipeline == "ocr":
+                _ocr = _cfg.get("ocr_model") or _vlm.OCR_DEFAULT_MODEL
+                _struct = ""
+                try:
+                    import judge as _j
+                    _struct = _j.load_config().get("model", "")
+                except Exception:
+                    pass
+                _reader_text = (f"OCR 链路  {_ocr}" + (f" → {_struct} 结构化" if _struct else "")
+                                + "（约 10 秒/屏，比视觉模型快近一倍）")
             else:
-                _reader_text = "OCR（未配置 VLM_API_KEY，较慢且解析易错）"
-        except Exception:
-            _reader_text = "OCR"
+                _reader_text = f"视觉模型  {_cfg.get('model')}（较慢，约 16~20 秒/屏）"
+        except Exception as exc:
+            _reader_text = f"识别方式读取失败：{exc}"
         status = ttk.Label(top, text=f"识别方式：{_reader_text}", foreground="#0a6")
         status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
