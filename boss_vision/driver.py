@@ -694,6 +694,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                         "conflicts": rr.conflicts,
                         "basic": getattr(rr, "basic", {}) or {},
                         "missing": list(getattr(rr, "missing", []) or []),
+                        "work_state": getattr(rr, "work_state", "unknown"),
                         "name_candidates": list(getattr(rr, "name_candidates", []) or []),
                         "name_issues": list(getattr(rr, "name_issues", []) or []),
                         "name_disputed": bool(getattr(rr, "name_disputed", False)),

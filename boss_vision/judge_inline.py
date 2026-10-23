@@ -36,6 +36,7 @@ def record_to_row(rec: dict) -> dict:
         "复核原因": rec.get("review_reason") or "",
         "冲突数": len(rec.get("conflicts") or []),
         "缺失字段": "；".join(rec.get("missing") or []),
+        "工作经历状态": rec.get("work_state", ""),
         "工作经历全文": "\n".join(
             f'{w.get("period", "")} {w.get("company", "")}/{w.get("title", "")}'
             + ("：" + "；".join(w.get("descriptions") or []) if w.get("descriptions") else "")

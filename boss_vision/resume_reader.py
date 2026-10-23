@@ -117,6 +117,7 @@ class ReadResult:
     name_candidates: list = field(default_factory=list)   # 姓名候选（含来源）
     name_disputed: bool = False                     # 姓名存在分歧
     name_issues: list = field(default_factory=list) # 姓名诊断（只记录，不阻断判定）
+    work_state: str = "unknown"                     # present / explicit_none / unknown
     usage: dict = field(default_factory=dict)       # 视觉模型 token 用量
 
     def as_dict(self) -> dict:
@@ -141,6 +142,7 @@ class ReadResult:
             "name_candidates": self.name_candidates,
             "name_disputed": self.name_disputed,
             "name_issues": self.name_issues,
+            "work_state": self.work_state,
             "incomplete": self.incomplete,
             "review_reason": self.review_reason,
         }
@@ -642,6 +644,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     unattributed: list[list[str]] = []          # 找不到归属的职责片段
     pending_fragments: list[dict] = []          # 暂存的跨屏片段（等有经历再挂）
     edu_screens: list[int] = []                 # 出现过教育经历的屏号
+    text_all: list[str] = []                    # 所有屏的 OCR 原文（判断区块是否存在）
     edu_pending = 0                              # 教育字段不全时的补采计数
     prev_frame = None
 
@@ -767,6 +770,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 for field in ("school", "major", "degree", "period"):
                     if not (same.get(field) or "").strip() and (e.get(field) or "").strip():
                         same[field] = e[field]
+        text_all.append(str(raw.get("raw") or ""))
         res.screen_count = step + 1
         u = raw.get("usage") or {}
         usage_total["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
@@ -1006,6 +1010,26 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             log(f"  采集完整（建议补充：{'、'.join(nice[:3])}）")
     except Exception as exc:
         log(f"  [warn] 完整性检查失败：{exc}")
+
+    # ---- 工作经历状态：读到 / 明确没有 / 未确认 ----
+    try:
+        joined = "\n".join(text_all) if "text_all" in dir() else str(getattr(res, "text", "") or "")
+        has_work_header = ("工作经历" in joined) or ("实习经历" in joined)
+        has_edu_header = ("教育经历" in joined)
+        if work:
+            res.work_state = "present"
+        elif has_edu_header and (has_work_header or not has_work_header):
+            # 整份简历读到了教育区，且没有任何工作条目：
+            # 有「工作经历」标题 -> 标题下确实空；没有标题 -> 简历本身就没这块
+            res.work_state = "explicit_none"
+        else:
+            res.work_state = "unknown"
+        if res.work_state == "explicit_none" and not work:
+            log(f"  工作经历：确认无（教育区已读到，工作经历区块"
+                f"{'存在但为空' if has_work_header else '不存在'}）")
+    except Exception as exc:
+        res.work_state = "present" if work else "unknown"
+        log(f"  [warn] 工作经历状态判定失败：{exc}")
 
     res.work = work
     res.education = education

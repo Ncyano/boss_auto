@@ -68,15 +68,24 @@ def screen_row_of(row: dict) -> dict:
         duty = row.get(f"第{i}家工作内容", "")
         if duty:
             out[f"第{i}家工作内容"] = duty
-    # 采集完成：数据集里叫「采集完整」，两种命名都兼容
-    out["采集完成"] = row.get("采集完整") or row.get("采集完成") or "是"
     for i in range(1, SLOTS + 1):
         for suffix in ("公司", "职位", "起止"):
             key = f"第{i}家{suffix}"
             out[key] = row.get(key, "")
+
     missing = row.get("缺失字段", "") or ""
+    # 采集状态只在这里赋值一次：
+    #   原始「采集完整/采集完成」优先；没有原始值时，缺失字段非空就判"否"，
+    #   绝不能默认成"是"（未采集 ≠ 采集成功）
+    raw_done = (row.get("采集完整") or row.get("采集完成") or "").strip()
+    if raw_done in ("是", "否"):
+        done = raw_done
+    elif missing:
+        done = "否"
+    else:
+        done = "未知"
     out.update({
-        "采集完成": row.get("采集完整") or ("是" if not missing else "否"),
+        "采集完成": done,
         "需复核": row.get("需复核") or ("是" if missing else "否"),
         "复核原因": row.get("复核原因") or missing,
         "冲突数": row.get("冲突数") or 0,

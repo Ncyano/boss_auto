@@ -365,19 +365,15 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
                 pass
 
     # ---------- W06 明确没有工作经历 ----------
-    zero_review_only = (not real_reasons and not real_conflicts)
-    if not work and (not collection.get("needs_review") or zero_review_only):
-        count = collection.get("work_count")
-        try:
-            count_int = int(count) if count not in (None, "") else None
-        except (TypeError, ValueError):
-            count_int = None
-        if count_int is not None and count_int > 0:
-            # 简历说有 N 段经历，但我们没拿到明细 -> 采集不全，不是"没有经历"
-            reviews.append(f"简历标注 {count_int} 段工作经历，但未取到明细")
-        elif collection.get("complete") or count_int == 0:
+    # W06 只在"明确确认没有工作经历"时触发；
+    # 解析结果为空但没读到教育/区块，属于「未确认」，按采集不完整处理，不进负样本
+    if not work:
+        state = str(collection.get("work_state") or "").strip()
+        if state == "explicit_none":
             failures.append({"rule": "W06", "reason": "确认无工作经历",
-                             "evidence": "简历完整读取，工作经历为空"})
+                             "evidence": "简历教育区已读到，工作经历区块为空或不存在"})
+        elif state == "unknown":
+            reviews.append("未确认是否有工作经历（补采未成功）")
 
     # ---------- v0.2.0：年龄 / 空档 / 同行 / 应届 / 经验 都是硬性不合适 ----------
     age = basic.get("age")

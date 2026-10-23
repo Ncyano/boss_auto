@@ -238,7 +238,15 @@ def screen_work(row: dict, rules: dict, scorer=None, threshold_pass=None, thresh
         count = 0
 
     if count < int(work_rules.get("min_entries", 1)):
-        return {"work_result": REJECT, "work_reason": "无工作经历", "score": None}
+        state = str(row.get("工作经历状态") or "").strip()
+        if state == "explicit_none":
+            # 明确确认没有经历 -> 业务不合适
+            return {"work_result": REJECT, "work_reason": "确认无工作经历",
+                    "score": None, "status": "正常"}
+        # 没读到/补采失败 -> 不能当"确实没有"，标为无法核实
+        return {"work_result": REJECT,
+                "work_reason": "未确认是否有工作经历（未读到或补采失败）",
+                "score": None, "status": "无法核实"}
 
     text = work_text(row)
     if not text.strip():
@@ -447,6 +455,7 @@ def resume_from_row(row: dict) -> dict:
         "basic": {"age": row.get("年龄"), "education_mode": (row.get("学历性质") or ""),
                   "status": (row.get("求职状态") or "")},
         "name_issues": [x for x in str(row.get("姓名核验", "") or "").split("；") if x],
+        "work_state": row.get("工作经历状态", "") or "",
         "gap_months": _last_job_gap_months(work),
         "total_work_months": _total_work_months(work),
         "company_1": (row.get("第1家公司") or ""),
@@ -564,6 +573,7 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
 
     if edu["edu_result"] == REJECT:
         out.update({"经历结论": "—", "最终结论": REJECT,
+                    "处理状态": "正常",
                     "原因": edu["edu_reason"]})
         return out
     if edu["edu_result"] == REVIEW:
@@ -581,6 +591,7 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
 
     if work["work_result"] == REJECT:
         out["最终结论"] = REJECT
+        out["处理状态"] = work.get("status") or "正常"
         out["原因"] = f"{edu['edu_reason']}；{work['work_reason']}"
     elif work["work_result"] == "待评分":
         # 二元口径：学历通过后必须落到 合适/不合适
@@ -594,7 +605,9 @@ def screen_row(row: dict, rules: dict, scorer=None) -> dict:
             out["原因"] = "未接入判断模型，无法确认工作经历匹配（默认按不合适）"
     else:
         out["最终结论"] = work["work_result"]
+        out.setdefault("处理状态", "正常")
         out["原因"] = f"{edu['edu_reason']}；{work['work_reason']}"
+    out.setdefault("处理状态", "正常")
     return out
 
 
