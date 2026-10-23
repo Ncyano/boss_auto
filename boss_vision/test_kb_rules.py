@@ -138,9 +138,9 @@ def main() -> int:
             "basic": {"age": 24, "education_mode": "全日制"}, "gap_months": 0,
             "total_work_months": 30}
     overlap = kbmod.evaluate({**base, "work": [{"company": "甲", "title": "客服",
-                                                "period": "2022.03-2023.06",
+                                                "period": "2022.01-2023.06",
                                                 "descriptions": ["接待客户"]}]}, data)
-    check("重合 20 个月 -> 不合适", overlap["verdict"] == "不合适", overlap["verdict"])
+    check("重合 17 个月 -> 不合适", overlap["verdict"] == "不合适", overlap["verdict"])
     check("命中 P06", any(f["rule"] == "P06" for f in overlap["failures"]),
           str([f["rule"] for f in overlap["failures"]]))
 
