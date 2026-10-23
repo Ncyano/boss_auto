@@ -66,6 +66,12 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
             missing.append("工作经历（未读到章节）")
     else:
         for idx, item in enumerate(work, 1):
+            kind = str(item.get("section") or "work").lower()
+            if kind in ("project", "campus", "other"):
+                continue          # 项目/校园经历不要求公司名
+            # 公司名与起止都空 -> 多半是标签行（"商家运营 | 线上运营"），不是真工作
+            if _blank(item.get("company")) and _blank(item.get("period")):
+                continue
             for key in REQUIRED_WORK:
                 if key == "descriptions":
                     if _blank(item.get("descriptions")):

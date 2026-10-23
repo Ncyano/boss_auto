@@ -66,7 +66,13 @@ def judge_record(rec: dict, rules: dict | None = None) -> dict:
     reason = (out.get("原因") or "").strip()
     edu = out.get("教育结论") or "—"
     work = out.get("经历结论") or "—"
-    stage = "学历" if work in ("—", "", None) else "工作经历"
+    reason_text = f"{out.get('原因') or ''}"
+    if "采集" in reason_text or "缺失" in reason_text:
+        stage = "采集"
+    elif work in ("—", "", None):
+        stage = "学历"
+    else:
+        stage = "工作经历"
     return {"verdict": verdict, "status": status, "reason": reason,
             "edu": edu, "work": work, "stage": stage}
 

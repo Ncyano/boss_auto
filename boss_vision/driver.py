@@ -635,10 +635,17 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                                 -len(getattr(res, "missing", []) or []))
 
                     best = rr
+                    seen_missing: set = set()
                     for retry in range(2):
                         missing = list(getattr(best, "missing", []) or [])
                         if not missing:
                             break
+                        key_missing = tuple(sorted(missing))
+                        if key_missing in seen_missing:
+                            print(f"     缺失项与上次相同（{'；'.join(missing[:3])}），"
+                                  f"不再整段重读")
+                            break
+                        seen_missing.add(key_missing)
                         print(f"     ⚠ 采集缺失：{'；'.join(missing[:4])}，"
                               f"回顶重读 {retry + 1}/2")
                         try:
