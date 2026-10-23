@@ -21,6 +21,21 @@ NICE_EDU = ("major", "period", "mode")
 NICE_BASIC = ("age", "education_mode", "graduation_year")
 
 
+def _has_duty(item: dict) -> bool:
+    """这段经历是否有实质职责文本。"""
+    if not isinstance(item, dict):
+        return False
+    for key in ("descriptions", "duties", "responsibilities"):
+        raw = item.get(key)
+        if isinstance(raw, str):
+            if raw.strip():
+                return True
+        elif isinstance(raw, list):
+            if any(str(x).strip() for x in raw):
+                return True
+    return False
+
+
 def _blank(value) -> bool:
     if value is None:
         return True
@@ -74,8 +89,13 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
                 continue
             if _blank(item.get("period")):
                 nice.append(f"第{idx}家起止")
+            # 只要还有别的经历写了职责，就不因单段缺职责判死（岗位/时间仍可判定）
+            has_any_duty = any(_has_duty(w) for w in work if isinstance(w, dict))
             for key in REQUIRED_WORK:
                 if key == "descriptions":
+                    if not _has_duty(item):
+                        (missing if not has_any_duty else nice).append(f"第{idx}家职责")
+                    continue
                     if _blank(item.get("descriptions")):
                         missing.append(f"第{idx}家职责")
                 elif _blank(item.get(key)):
