@@ -455,18 +455,12 @@ def resume_from_row(row: dict) -> dict:
             "needs_review": (row.get("需复核") or "") == "是",
             "conflicts": [1] * int(row.get("冲突数") or 0),
             "review_reason": reasons,
+            "work_state": (row.get("工作经历状态") or "").strip() or "unknown",
         },
         "basic": {"age": row.get("年龄"), "education_mode": (row.get("学历性质") or ""),
                   "status": (row.get("求职状态") or "")},
         "name_issues": [x for x in str(row.get("姓名核验", "") or "").split("；") if x],
-        "work_state": row.get("工作经历状态", "") or "",       # 兼容顶层读取
-        "collection": {
-            "complete": str(row.get("采集完成", "")) != "否",
-            "needs_review": str(row.get("需复核", "")) == "是",
-            "review_reason": [x for x in str(row.get("复核原因", "") or "").split("；") if x],
-            "conflicts": [],
-            "work_state": row.get("工作经历状态", "") or "",   # 知识库从这里读
-        },
+        "work_state": row.get("工作经历状态", "") or "",
         "gap_months": _last_job_gap_months(work),
         "total_work_months": _total_work_months(work),
         "company_1": (row.get("第1家公司") or ""),

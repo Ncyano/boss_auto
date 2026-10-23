@@ -1022,7 +1022,13 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
             #   b) 有「工作经历」标题，且紧跟着另一个区块标题（说明该区块是空的）
             #   c) 整份简历根本没有「工作经历」标题，但读到了教育区且没有其他区块内容
             empty_marks = ("无工作经历", "暂无工作经历", "没有工作经历", "无工作经验", "暂无工作经验")
-            explicit = any(m in joined for m in empty_marks)
+            work_evidence = ""
+            explicit = False
+            for m in empty_marks:
+                if m in joined:
+                    work_evidence = f"简历写明「{m}」"
+                    explicit = True
+                    break
 
             if not explicit:
                 heads = ("工作经历", "实习经历", "教育经历", "项目经历", "校园经历",
@@ -1034,12 +1040,12 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                                if lines[j].startswith(heads[2:])]
                         if nxt and (nxt[0] - i) <= 2:      # 标题后紧跟别的区块
                             explicit = True
+                            work_evidence = f"「{lines[i][:6]}」区块为空（紧跟「{lines[nxt[0]][:6]}」）"
                         break
 
             res.work_state = "explicit_none" if explicit else "unknown"
         if res.work_state == "explicit_none" and not work:
-            log(f"  工作经历：确认无（教育区已读到，工作经历区块"
-                f"{'存在但为空' if has_work_header else '不存在'}）")
+            log(f"  工作经历：确认无（证据：{work_evidence or '区块为空'}）")
     except Exception as exc:
         res.work_state = "present" if work else "unknown"
         log(f"  [warn] 工作经历状态判定失败：{exc}")

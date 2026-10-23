@@ -86,6 +86,8 @@ def screen_row_of(row: dict) -> dict:
         done = "未知"
     out.update({
         "采集完成": done,
+        # 线上会带三态；旧数据没有这列 -> 明确 unknown（不臆测"确实无经历"）
+        "工作经历状态": (row.get("工作经历状态") or "").strip() or "unknown",
         "需复核": row.get("需复核") or ("是" if missing else "否"),
         "复核原因": row.get("复核原因") or missing,
         "冲突数": row.get("冲突数") or 0,
