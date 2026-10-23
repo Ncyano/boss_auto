@@ -836,7 +836,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         if not work and res.shots:
             zoom_cfg0 = dict(cfg)
             zoom_cfg0["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
-            for st0, crop0 in res.shots[:3]:
+            for st0, crop0 in res.shots:      # 所有屏都补，不只前三屏
                 log(f"  没读到工作经历，放大重读第 {st0 + 1} 屏")
                 try:
                     if str(cfg.get("pipeline") or "vlm").lower() == "ocr":

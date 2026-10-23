@@ -581,8 +581,6 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 print("  收到停止指令，不再点击")
                 break
 
-            winenv.click(ox + cx, oy + cy)
-            time.sleep(1.0)
             # 卡片姓名必须在点开前读（点开后再截屏会读到简历正文）
             pre_card_name = ""
             try:
@@ -595,6 +593,8 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             except Exception as exc:
                 print(f"     [warn] 卡片姓名读取失败：{exc}")
 
+            winenv.click(ox + cx, oy + cy)
+            time.sleep(1.0)
             opened = False
             p2 = None
             for _ in range(8):

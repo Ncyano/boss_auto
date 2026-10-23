@@ -61,6 +61,15 @@ def screen_row_of(row: dict) -> dict:
     out["工作经历条数"] = row.get("工作条数") or row.get("工作经历条数") or ""
     # 职责原文：模型判定的核心输入，必须带上
     out["工作经历全文"] = row.get("工作经历全文", "")
+    # 教育起止 + 各段职责：评估必须看到和线上一样的信息
+    out["教育起止"] = row.get("教育起止", "") or row.get("教育起止", "")
+    out["教育条数"] = row.get("教育条数", "")
+    for i in range(1, 11):
+        duty = row.get(f"第{i}家工作内容", "")
+        if duty:
+            out[f"第{i}家工作内容"] = duty
+    # 采集完成：数据集里叫「采集完整」，两种命名都兼容
+    out["采集完成"] = row.get("采集完整") or row.get("采集完成") or "是"
     for i in range(1, SLOTS + 1):
         for suffix in ("公司", "职位", "起止"):
             key = f"第{i}家{suffix}"
