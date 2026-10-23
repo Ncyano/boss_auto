@@ -648,7 +648,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     seen_missing: set = set()
                     fast_mode = bool(getattr(best, "reader", "") == "vlm-fast")
                     if fast_mode:
-                        log("     快速读法：跳过整段回顶重读（缺失项保留为提示）")
+                        print("     快速读法：跳过整段回顶重读（缺失项保留为提示）")
                         retry = -1
                     for retry in range(0 if fast_mode else 2):
                         missing = list(getattr(best, "missing", []) or [])
