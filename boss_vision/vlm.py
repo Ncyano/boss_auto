@@ -387,6 +387,8 @@ NON_NAME_WORDS = {
     "工作经历", "教育经历", "项目经历", "校园经历", "实习经历", "求职期望", "期望职位",
     "自我评价", "资格证书", "专业技能", "荣誉奖项", "基本信息", "求职意向",
     "价格", "负责", "内容", "业绩", "描述", "职责", "标签", "更多", "查看", "全部",
+    "考虑机会", "随时到岗", "月内到岗", "看看机会", "求职期望", "期望职位",
+    "离职", "在职", "应届生", "在校",
 }
 
 # 职位/标签类词：这些出现在"姓名"里说明抓到的是简历标签或职位，不是人名
@@ -404,8 +406,12 @@ def is_plausible_name(text: str) -> bool:
     实测会把页面上的杂字、图标文字当成姓名（/UR,±>、丨 | 离校、主> 等），
     这些必须拒掉，宁可标"姓名未识别"也不写脏数据。
     """
-    t = (text or "").strip()
+    import re as _re
+    t = (text or "").strip().rstrip("网直聘 ")
     if not t or t in NON_NAME_WORDS:
+        return False
+    # 纯大写英文 5 个以上是乱码/代号（CRTCRT）
+    if _re.fullmatch(r"[A-Z]{5,}", t):
         return False
     if any(w in t for w in TAG_WORDS):
         return False
