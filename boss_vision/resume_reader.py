@@ -1345,10 +1345,19 @@ def _basic_from_text(text: str) -> dict:
         age = int(m.group(1))
         if 14 <= age <= 70:
             out["age"] = age
-    for kw in ("非全日制", "全日制", "统招"):
-        if kw in text:
-            out["education_mode"] = "非全日制" if kw == "非全日制" else "全日制"
-            break
+    # 非全日制有明确写法；没有这些词时按全日制认定（绝大多数统招简历不标注）
+    NON_FULL = ("非全日制", "自考", "成人教育", "成人高考", "函授", "网络教育",
+                "业余", "脱产", "开放大学", "电大")
+    hit = next((kw for kw in NON_FULL if kw in text), "")
+    if hit:
+        out["education_mode"] = "非全日制"
+        out["education_mode_source"] = f"简历标注「{hit}」"
+    elif "全日制" in text or "统招" in text:
+        out["education_mode"] = "全日制"
+        out["education_mode_source"] = "简历标注全日制"
+    else:
+        out["education_mode"] = "全日制"
+        out["education_mode_source"] = "简历未标注，按默认全日制认定"
     m = __import__("re").search(r"(离职|在职|在校)[-－·\s]*(随时到岗|月内到岗|考虑机会|看看机会)?", text)
     if m:
         out["status"] = (m.group(0) or "").strip()
