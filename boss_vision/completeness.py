@@ -91,10 +91,24 @@ def check(resume: dict) -> tuple[bool, list[str], list[str]]:
                 nice.append(f"第{idx}家起止")
             # 只要还有别的经历写了职责，就不因单段缺职责判死（岗位/时间仍可判定）
             has_any_duty = any(_has_duty(w) for w in work if isinstance(w, dict))
+            # 至少有一段"公司+职位+起止+职责"齐全，就说明采集通了，单条残缺只作提示
+            has_full_entry = any(
+                isinstance(w, dict)
+                and not _blank(w.get("company")) and not _blank(w.get("title"))
+                and not _blank(w.get("period")) and _has_duty(w)
+                for w in work)
+            if has_full_entry:
+                only_nice = True
+            else:
+                only_nice = False
             for key in REQUIRED_WORK:
                 if key == "descriptions":
                     if not _has_duty(item):
-                        (missing if not has_any_duty else nice).append(f"第{idx}家职责")
+                        (missing if (not has_any_duty and not only_nice) else nice).append(
+                            f"第{idx}家职责")
+                    continue
+                if only_nice and _blank(item.get(key)) and key != "descriptions":
+                    nice.append(f"第{idx}家{ {'company': '公司名', 'title': '职位', 'period': '起止'}[key] }")
                     continue
                 if key == "title" and _blank(item.get("title")):
                     # 公司/起止/职责都有，只是缺职位名 -> 可判定，只提示

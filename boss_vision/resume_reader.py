@@ -1322,6 +1322,17 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
                 basic["graduation_year"] = str(max(years))
     res.basic = basic
 
+    # ---------- 6a. 工作经历兜底：文本里有公司+年份却没结构化出来 ----------
+    if not res.work and full_text:
+        try:
+            guess = _heuristic_work_entries(full_text)
+            if guess:
+                res.work = guess
+                log(f"  工作经历按原文硬捞：{len(guess)} 段"
+                    f"（{guess[0]['company']} 等）")
+        except Exception as exc:
+            log(f"  [warn] 工作经历硬捞失败：{exc}")
+
     # ---------- 6b. 教育区定向补采（校名双读 + 缺失字段放大重读） ----------
     try:
         edu_crop = None
@@ -1395,6 +1406,36 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 6,
     res.stopped_reason = "快速读法完成"
     log(f"  结果：工作 {len(res.work)} 条 / 教育 {len(res.education)} 条")
     return res
+
+def _heuristic_work_entries(text: str) -> list[dict]:
+    """结构化没读出工作经历时，按行硬捞一遍（公司名 + 职位 + 起止）。"""
+    import re as _re
+    if not text:
+        return []
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    entries: list[dict] = []
+    cur = None
+    for ln in lines:
+        if not _re.search(r"(19|20)\d{2}", ln):
+            if cur is not None and len(ln) > 4:
+                cur["descriptions"].append(ln)
+            continue
+        # 带年份的行：可能是"公司 职位 时间"
+        m = _re.search(r"((?:19|20)\d{2}[.\-/年]?\d{0,2}\s*[-~至]\s*(?:(?:19|20)\d{2}[.\-/年]?\d{0,2}|至今))", ln)
+        period = m.group(1) if m else ""
+        head = (ln[:m.start()] if m else ln).strip(" |·-—:：	")
+        if not head:
+            continue
+        if not any(k in head for k in ("公司", "集团", "工作室", "事务所", "中心", "机构",
+                                       "学校", "学院", "医院", "政府", "店", "厂", "传媒")):
+            continue
+        parts = [p for p in _re.split(r"[|丨\s·]+", head) if p]
+        company = parts[0] if parts else head
+        title = parts[1] if len(parts) > 1 else ""
+        cur = {"company": company[:30], "title": title[:20], "period": period,
+               "descriptions": []}
+        entries.append(cur)
+    return [e for e in entries if e["descriptions"] or e["period"]]
 
 def _basic_from_text(text: str) -> dict:
     """从 OCR 全文里抓年龄、学习形式、求职状态（比模型稳定）。"""
