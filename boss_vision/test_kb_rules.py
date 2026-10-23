@@ -152,7 +152,9 @@ def main() -> int:
     short = kbmod.evaluate({**base, "work": [{"company": "甲", "title": "客服",
                                               "period": "2024.01-2024.06",
                                               "descriptions": ["接待客户"]}]}, data)
-    check("重合 5 个月 -> 不判死", short["verdict"] != "不合适", short["verdict"])
+    # 5 个月重合不该触发 P06（在校工作）；可能因 P01 相关经验不足被拒，但原因里不能有"在校"
+    check("重合 5 个月 -> 不触发 P06", "在校" not in (short.get("reason") or ""),
+          short.get("reason", ""))
 
     print("\n[7] 姓名不影响判定")
     nameless = {"education": [{"school": "厦门大学", "degree": "本科", "period": "2020-2024",

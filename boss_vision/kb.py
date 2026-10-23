@@ -280,6 +280,31 @@ def _check_job_profile(work: list, params: dict) -> tuple[list[dict], list[str]]
                  "evidence": "、".join(sorted(set(exclude_hits))[:4])}], []
     return [], []
 
+_RELEVANT_TITLE_KW = ("运营", "客服", "电商", "店铺", "直播", "社群", "私域", "用户",
+                      "销售", "推广", "客户", "新媒体", "内容", "招商", "渠道")
+
+
+def relevant_months(work: list[dict], prefer: list[str] | None = None) -> int:
+    """只累计"相关岗位"的月数（人事口径：0.5 年以上相关经验）。"""
+    prefer = prefer or []
+    total = 0
+    for w in work or []:
+        if not isinstance(w, dict):
+            continue
+        title = f"{w.get('title') or ''} {w.get('company') or ''}"
+        duty = " ".join(w.get("descriptions") or [])
+        hit = any(k in title for k in _RELEVANT_TITLE_KW) or any(p in title for p in prefer)
+        if not hit:
+            hit = any(k in duty for k in ("店铺", "上架", "客服", "客户", "售后", "投放", "直播"))
+        if not hit:
+            continue
+        span = _span(w.get("period") or "")
+        if isinstance(span, tuple):          # (起, 止) 月份索引
+            span = max(0, span[1] - span[0])
+        if isinstance(span, int) and span > 0:
+            total += span
+    return total
+
 def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     """按知识库执行硬规则，返回判定与全部提示。
 
@@ -357,6 +382,15 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
         if schools_lookup is not None and school and education_status == "通过":
             try:
                 hit = schools_lookup(school)
+                if not hit.get("listed"):
+                    # 学校里可能同时写了简称和全称（"万博学院 万博科技职业学院"），逐个试
+                    for piece in str(school).replace("/", " ").replace("、", " ").split():
+                        if len(piece) < 4:
+                            continue
+                        alt = schools_lookup(piece)
+                        if alt.get("listed"):
+                            hit = alt
+                            break
                 if not hit.get("listed"):
                     # 把近似候选写进原因：若是错字/OCR 误读，人工一眼能看出来
                     cands = [c for c in (hit.get("candidates") or []) if c]
@@ -436,11 +470,34 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
     # P06：在校期间长期工作（无实习标记）
     failures.extend(_check_school_work_overlap(education, work, params_of(kb, "P06")))
 
+    min_months = int(params_of(kb, "P01").get("min_months", 6))
+    # 人事口径：看的是"相关岗位"累计月数（运营/客服/电商/销售…），不是全部工龄
+    rel = relevant_months(work, (params_of(kb, "W07") or {}).get("prefer_titles") or [])
     months = resume.get("total_work_months")
-    min_months = params_of(kb, "P01").get("min_months", 6)
-    if months is not None:
-        if months < int(min_months):
-            failures.append({"rule": "P01", "reason": f"累计相关工作 {months} 个月，不足 {min_months} 个月",
+    if rel:
+        if rel < min_months:
+            failures.append({"rule": "P01",
+                             "reason": f"相关岗位累计 {rel} 个月，不足 {min_months} 个月",
+                             "evidence": f"相关经验 {rel} 个月"})
+        else:
+            advisories.append(f"相关岗位 {rel} 个月（门槛 {min_months}）")
+    elif months is None:
+        # 没有现成的总月数：从工作起止粗算一遍
+        calc = 0
+        for w in work or []:
+            sp = _span((w or {}).get("period") or "") if isinstance(w, dict) else None
+            if isinstance(sp, tuple):
+                calc += max(0, sp[1] - sp[0])
+            elif isinstance(sp, int):
+                calc += sp
+        months = calc or None
+        if months is not None and months < min_months:
+            failures.append({"rule": "P01",
+                             "reason": f"累计相关工作 {months} 个月，不足 {min_months} 个月",
+                             "evidence": f"累计工作月数 {months}"})
+        if months < min_months:
+            failures.append({"rule": "P01",
+                             "reason": f"累计相关工作 {months} 个月，不足 {min_months} 个月",
                              "evidence": f"累计工作月数 {months}"})
         else:
             advisories.append(f"累计工作 {months} 个月（门槛 {min_months}）")

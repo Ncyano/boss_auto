@@ -156,6 +156,11 @@ def rule_brief(kb: dict) -> str:
     if prefer:
         lines.append("\n【优先考虑岗位】（命中即强正向，可建议合适）：\n"
                      + "、".join(prefer))
+    weak = (kbmod.params_of(kb, "W07") or {}).get("exclude_titles") or []
+    if weak:
+        lines.append("\n【不算运营岗】（纯销售/门店店员/理财保险/课程顾问/电销/餐饮服务；"
+                     "单独出现时不作为 W04/W07 命中依据）：\n" + "、".join(weak))
+
     if exclude:
         lines.append("\n【不考虑岗位】（只做技术/职能/生产，无对客户沟通）：\n"
                      + "、".join(exclude)
