@@ -563,6 +563,8 @@ def scroll_modal_top(x: int | None = None, y: int | None = None) -> bool:
         u = ctypes.windll.user32
         px = x if x else u.GetSystemMetrics(0) // 2
         py = y if y else u.GetSystemMetrics(1) // 2
+        if _CAPTURE_MODE[0] == "cdp":
+            return False      # 后台模式：绝不发系统滚轮（会滚到上层别的窗口）
         for _ in range(8):
             raw_wheel(px, py, 6)
         return True
@@ -602,6 +604,8 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
         u = ctypes.windll.user32
         px = x if x else u.GetSystemMetrics(0) // 2
         py = y if y else u.GetSystemMetrics(1) // 2
+        if _CAPTURE_MODE[0] == "cdp":
+            return False      # 后台模式：只走页面内滚动，避免滚到上层别的窗口
         raw_wheel(px, py, clicks)
         return True
     except Exception:
@@ -626,6 +630,18 @@ def scroll_at(x: int, y: int, clicks: int = -3) -> None:
     scroll(x, y, clicks)
 
 def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
+    if _CAPTURE_MODE[0] == "cdp" and _cdp_mode():
+        # 后台模式：只走页面内滚动，绝不发系统滚轮（会滚到上层别的窗口）
+        try:
+            cli = _cdp_client()
+            before = cli.scroll_top()
+            if cli.scroll_js(-clicks * 120) != before:
+                return
+            cli.scroll_css(int(x), int(y), -clicks * 120)
+            return
+        except Exception:
+            reset_cdp()
+            return
     if _cdp_mode() and _CDP_SCROLL_OK[0]:
         try:
             # 约定 clicks<0 = 向下滚；用 JS 直接滚（BOSS 列表在 iframe 里且是虚拟滚动）
