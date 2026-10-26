@@ -4,7 +4,7 @@
 --------
 1. **滚在弹窗里**，不是滚整个页面：滚轮指针必须落在弹窗正文区域上。
 2. **逐屏读 + 去重拼接**：每滚一次识别一屏，只把没见过的行追加进去。
-3. **滚动本身也要过输入闸门**：`winenv.scroll_modal()` 会先确认光标到位，不到位直接抛
+3. **滚动本身也要过输入闸门**：`winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)` 会先确认光标到位，不到位直接抛
    `InputBlocked`，不会在别处乱滚。
 """
 from __future__ import annotations
@@ -231,7 +231,7 @@ def read_resume(
         ty = oy + probe.y + probe.h // 2
         for attempt in range(2):
             before = _np.asarray(first_img, dtype=_np.int16)
-            winenv.scroll_modal()
+            winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
             time.sleep(settle)
             after_img = winenv.grab_window(rect)
             after = _np.asarray(after_img, dtype=_np.int16)
@@ -307,7 +307,7 @@ def read_resume(
 
         tx = ox + band.x + band.w // 2
         ty = oy + band.y + int(band.h * 0.75)
-        winenv.scroll_modal()
+        winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
         time.sleep(settle)
         res.steps = step + 1
 
@@ -632,7 +632,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         img = winenv.grab_window(rect)
         tx, ty = ox + band.x + band.w // 2, oy + band.y + band.h // 2
         before = _np.asarray(img, dtype=_np.int16)
-        winenv.scroll_modal()
+        winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
         time.sleep(settle)
         after = _np.asarray(winenv.grab_window(rect), dtype=_np.int16)
         res.at_top = float(_np.abs(after - before).mean()) < 0.5
@@ -726,7 +726,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     try:
                         tx = ox + band.x + band.w // 2
                         ty = oy + band.y + band.h // 2
-                        winenv.scroll_modal()
+                        winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
                         time.sleep(0.8)
                         img = winenv.grab_window(rect)
                         band = panel_band(img, wide)
@@ -822,7 +822,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
 
         tx = ox + band.x + band.w // 2
         ty = oy + band.y + int(band.h * 0.75)
-        winenv.scroll_modal()
+        winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
         time.sleep(settle)
         res.steps = step + 1
 
@@ -1195,7 +1195,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     try:
         img0 = winenv.grab_window(rect)
         band0 = panel_band(img0, wide)
-        winenv.scroll_modal()
+        winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
         time.sleep(settle)
     except Exception as exc:
         log(f"  [warn] 回顶失败：{exc}")
@@ -1212,7 +1212,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
         crops.append(crop.copy())
         prev = crop
         try:
-            winenv.scroll_modal()
+            winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
         except Exception:
             break
         time.sleep(settle)
@@ -1337,7 +1337,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
             log("  没读到教育经历，滚到页面底部再读一屏")
             for _ in range(10):
                 band_r = panel_band(winenv.grab_window(rect), wide)
-                winenv.scroll_modal()
+                winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
                 time.sleep(0.25)
             img_b = winenv.grab_window(rect)
             band_b = panel_band(img_b, wide)

@@ -366,24 +366,39 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
     return ok, msg
 
 
-def scroll_modal(clicks: int = -3) -> None:
-    """滚简历弹窗（找最长的可滚动容器），完全不用坐标和鼠标。"""
-    if _cdp_mode() and _CDP_SCROLL_OK[0]:
+def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -> bool:
+    """滚简历弹窗，三级尝试；返回是否真的滚动了。
+
+    1) JS 直接设 scrollTop（找内容最长的可滚动容器）
+    2) CDP 在弹窗中心派发滚轮事件
+    3) 真实鼠标滚轮（最后兜底）
+    """
+    delta = -clicks * 120
+    # ① JS 改 scrollTop
+    if _cdp_mode():
         try:
-            moved = _cdp_client().scroll_modal(-clicks * 120)
-            if moved:
-                return
+            if _cdp_client().scroll_modal(delta):
+                return True
         except Exception:
             reset_cdp()
-    # 兜底：真实滚轮（坐标取屏幕中心）
+    # ② CDP 滚轮事件（很多弹窗只监听 wheel，不认 scrollTop）
+    if _cdp_mode() and x and y:
+        try:
+            _cdp_client().wheel(x, y, delta)
+            return True
+        except Exception:
+            reset_cdp()
+    # ③ 真实滚轮
     try:
         import ctypes
         u = ctypes.windll.user32
-        cx = u.GetSystemMetrics(0) // 2
-        cy = u.GetSystemMetrics(1) // 2
-        scroll(cx, cy, clicks)
+        px = x if x else u.GetSystemMetrics(0) // 2
+        py = y if y else u.GetSystemMetrics(1) // 2
+        scroll(px, py, clicks)
+        return True
     except Exception:
-        pass
+        return False
+
 
 def scroll_at(x: int, y: int, clicks: int = -3) -> None:
     """在 (x, y) 处滚动"该位置的容器"（简历弹窗/列表都能用），不移动鼠标。"""
