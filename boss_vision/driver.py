@@ -328,6 +328,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             _we._CDP_CLIENT[0] = c
     except Exception:
         pass
+    last_click_y = -9999          # 上一次点开的卡片 y，用于"从上往下"推进
     modal_open = [False]               # 当前是否有简历弹窗开着（统一清理用）
     handled = 0
     valid = 0                    # 真正打开并读到内容的次数（"有效人次"）
@@ -521,7 +522,16 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         sigs = p.get("sigs") or [0] * len(p["cards"])
         picked = None
         dup = 0
-        for k, idx in enumerate(p["todo"]):
+        # 按 y 从上到下依次推进：优先选"比上次点的更靠下"的卡，避免反复点同一张/乱跳
+        order = sorted(range(len(p["todo"])),
+                       key=lambda k: p["cards"][p["todo"][k]].y)
+        below = [(k, i) for k, i in enumerate(p["todo"])
+                 if p["cards"][i].y > last_click_y + 30]
+        if below:
+            order = [k for k, _ in below] + [k for k, _ in order if k not in
+                                              {k2 for k2, _ in below}]
+        for k in order:
+            idx = p["todo"][k]
             if sigs[idx] and sigs[idx] in seen_sigs:
                 dup += 1
                 continue
@@ -590,6 +600,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 continue
             if sig:
                 seen_sigs.add(sig)
+            last_click_y = p["cards"][idx].y
             print(f"  -> 点开卡片 #{idx + 1}（第 {handled + 1} 个候选人）: "
                   f"窗口内({cx},{cy}) / 屏幕({ox + cx},{oy + cy})")
             if not live:
