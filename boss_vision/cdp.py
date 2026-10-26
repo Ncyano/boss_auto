@@ -399,6 +399,43 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
         return str(res["result"].get("value") or "")
 
+    def screenshot(self):
+        """CDP 截图：返回 BGR numpy 数组（窗口被遮挡也能截到）。"""
+        import base64
+        import io
+        import numpy as np
+        self._call("Page.enable", {})
+        res = self._call("Page.captureScreenshot", {"format": "png"})
+        data = res.get("data") or (res.get("result") or {}).get("data")
+        if not data:
+            raise RuntimeError("截图失败")
+        from PIL import Image
+        img = Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
+        return np.array(img)[:, :, ::-1].copy()
+
+    def click_css(self, x: float, y: float) -> None:
+        """在页面 CSS 坐标处派发真实鼠标事件。"""
+        base = {"x": float(x), "y": float(y), "button": "left",
+                "clickCount": 1, "buttons": 1}
+        self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": float(x),
+                                                "y": float(y), "button": "none", "buttons": 0})
+        time.sleep(0.05)
+        self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
+        time.sleep(0.06)
+        self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
+        time.sleep(0.05)
+
+    def navigate(self, url: str, wait: float = 6.0) -> None:
+        self._call("Page.navigate", {"url": url})
+        time.sleep(wait)
+
+    def scroll_css(self, x: float, y: float, delta_y: int) -> int:
+        """在页面 CSS 坐标处滚轮。"""
+        self._send("Input.dispatchMouseEvent", {"type": "mouseWheel", "x": float(x),
+                                                "y": float(y), "deltaX": 0,
+                                                "deltaY": int(delta_y)})
+        return 1
+
     def click_element(self, text: str, container: str = "", exact: bool = True) -> bool:
         """点文字匹配的按钮：候选按「BUTTON 优先、面积最小」排序后派发真实鼠标事件。"""
         js = (

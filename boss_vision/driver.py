@@ -310,15 +310,37 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         max_refresh: int | None = None, min_gap: float = 3.0, max_gap: float = 5.0,
         icon_check: bool = True, count_valid: bool = False,
         max_attempts: int | None = None, allow_refresh: bool = False,
-        block_text_scan: bool = False, reader: str = "auto") -> int:
+        block_text_scan: bool = False, reader: str = "auto",
+        capture: str = "screen", url: str = "") -> int:
     winenv.enable_dpi_awareness()
     found = winenv.find_window("BOSS直聘")
     if not found:
         print("没找到标题含「BOSS直聘」的窗口，请先把 BOSS 页面打开。")
         return 2
     hwnd, rect, title = found
-    ox, oy = rect[0], rect[1]
+    # 后台模式：用浏览器自渲染截图，坐标即页面 CSS 坐标
+    if capture == "cdp":
+        try:
+            winenv.set_capture("cdp")
+            print(f"  抓图模式: CDP（后台运行，窗口可被遮挡）")
+        except Exception as exc:
+            print(f"  [warn] 切换 CDP 抓图失败，退回屏幕抓图：{exc}")
+    if winenv.capture_mode() == "cdp":
+        ox, oy = 0, 0
+    else:
+        ox, oy = rect[0], rect[1]
     print(f"窗口: {title}")
+    if url:
+        try:
+            import cdp as _cdp
+            if _cdp.available():
+                c0 = _cdp.CDP()
+                print(f"  打开网址: {url}")
+                c0.navigate(url, wait=6.0)
+                c0.close()
+                time.sleep(1.0)
+        except Exception as exc:
+            print(f"  [warn] 打开网址失败：{exc}")
     print(f"位置: ({ox},{oy}) 尺寸: {rect[2]}x{rect[3]}")
     print(f"模式: {'LIVE（会真实点击）' if live else 'DRY-RUN（只算不点）'}")
     _cdp_mtime = (Path(__file__).with_name("cdp.py")).stat().st_mtime

@@ -79,8 +79,23 @@ def find_window(keyword: str = "BOSS直聘") -> tuple[int, tuple[int, int, int, 
     return hits[0] if hits else None
 
 
+def set_capture(mode: str) -> None:
+    """切换抓图方式：screen（屏幕抓图）或 cdp（浏览器自渲染，被遮挡也能截）。"""
+    _CAPTURE_MODE[0] = "cdp" if mode == "cdp" else "screen"
+
+
+def capture_mode() -> str:
+    return _CAPTURE_MODE[0]
+
+
 def grab_window(rect: tuple[int, int, int, int]) -> np.ndarray:
-    """抓窗口区域，返回 BGR。"""
+    """抓窗口画面。cdp 模式用浏览器截图（窗口被遮挡也可以）。"""
+    if _CAPTURE_MODE[0] == "cdp":
+        return _cdp_client().screenshot()
+    return _grab_screen(rect)
+
+
+def _grab_screen(rect: tuple[int, int, int, int]) -> np.ndarray:
     x, y, w, h = rect
     im = ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
     return np.asarray(im.convert("RGB"))[:, :, ::-1].copy()
@@ -141,6 +156,7 @@ class InputBlocked(RuntimeError):
 _CDP_CLIENT = [None]
 
 
+_CAPTURE_MODE = ["screen"]      # screen | cdp
 _CDP_SCROLL_OK = [True]      # CDP 滚不动时置 False，退回真实滚轮
 
 
@@ -188,6 +204,11 @@ def reset_cdp() -> None:
     _CDP_CLIENT[0] = None
 
 def click(x: int, y: int, settle: tuple[float, float] = (0.06, 0.14), tolerance: int = 6) -> None:
+    # cdp 抓图模式下，(x,y) 就是页面 CSS 坐标，直接派发，不做屏幕换算
+    if _CAPTURE_MODE[0] == "cdp" and _cdp_mode():
+        _cdp_client().click_css(int(x), int(y))
+        time.sleep(settle[0])
+        return
     if _cdp_mode():
         try:
             _cdp_client().click(x, y)
@@ -522,6 +543,12 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
 
 
 def scroll_at(x: int, y: int, clicks: int = -3) -> None:
+    if _CAPTURE_MODE[0] == "cdp" and _cdp_mode():
+        try:
+            _cdp_client().scroll_css(int(x), int(y), -clicks * 120)
+            return
+        except Exception:
+            reset_cdp()
     """在 (x, y) 处滚动"该位置的容器"（简历弹窗/列表都能用），不移动鼠标。"""
     if _cdp_mode() and _CDP_SCROLL_OK[0]:
         try:

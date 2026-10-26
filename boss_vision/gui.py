@@ -63,6 +63,8 @@ class App:
         top.pack(fill="x", padx=10, pady=(10, 6))
 
         self.var_limit = tk.IntVar(value=20)
+        self.var_url = tk.StringVar(value="")
+        self.var_background = tk.BooleanVar(value=False)
         # 滚动屏数 / 刷新次数不再暴露在界面，用固定默认值（12 屏、3 次）
         self.var_scroll = tk.IntVar(value=12)
         self.var_refresh = tk.IntVar(value=3)
@@ -106,6 +108,12 @@ class App:
 
         add_row(1, "打招呼目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
                 "（只有打招呼成功的才算一次）")
+
+        add_row(7, "网址", ttk.Entry(top, textvariable=self.var_url, width=54),
+                "（可选，填了就先打开这个页面）")
+        add_row(8, "后台", ttk.Checkbutton(
+            top, text="后台模式（浏览器窗口可被遮挡；截图改用浏览器自渲染）",
+            variable=self.var_background))
 
         gap_row = ttk.Frame(top)
         ttk.Label(gap_row, text="间隔秒数").pack(side="left")
@@ -257,6 +265,8 @@ class App:
             count_valid=True,          # 按"有效人次"计数
             allow_refresh=bool(self.var_refresh_page.get()),
             block_text_scan=bool(self.var_text_scan.get()),
+            capture="cdp" if bool(self.var_background.get()) else "screen",
+            url=(self.var_url.get() or "").strip(),
         )
 
         self.worker = threading.Thread(target=self._run_worker, kwargs=kwargs, daemon=True)
