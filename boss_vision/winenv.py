@@ -79,6 +79,18 @@ def find_window(keyword: str = "BOSS直聘") -> tuple[int, tuple[int, int, int, 
     return hits[0] if hits else None
 
 
+def restore_window(hwnd) -> bool:
+    """如果窗口最小化则恢复（Chromium 最小化时不渲染，CDP 截图会空/超时）。"""
+    import ctypes
+    u = ctypes.windll.user32
+    if not hwnd or not u.IsWindow(hwnd):
+        return False
+    if u.IsIconic(hwnd):
+        u.ShowWindow(hwnd, 9)      # SW_RESTORE
+        time.sleep(0.8)
+        return True
+    return False
+
 def launch_debug_browser(url: str = "", port: int = 9222, wait: float = 25.0) -> bool:
     """用一个独立配置目录启动 Edge 并打开调试端口，返回端口是否就绪。
 

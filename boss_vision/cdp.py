@@ -405,7 +405,14 @@ class CDP:
         import io
         import numpy as np
         self._call("Page.enable", {})
-        res = self._call("Page.captureScreenshot", {"format": "png"})
+        old_timeout = getattr(self.ws, "timeout", None)
+        try:
+            if hasattr(self.ws, "sock") and self.ws.sock is not None:
+                self.ws.sock.settimeout(25.0)
+            res = self._call("Page.captureScreenshot", {"format": "png"})
+        finally:
+            if old_timeout and hasattr(self.ws, "sock") and self.ws.sock is not None:
+                self.ws.sock.settimeout(old_timeout)
         data = res.get("data") or (res.get("result") or {}).get("data")
         if not data:
             raise RuntimeError("截图失败")

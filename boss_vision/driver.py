@@ -347,6 +347,11 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 print("         也可以先运行 run-edge-debug.cmd 再点开始。")
     if winenv.capture_mode() == "cdp":
         ox, oy = 0, 0
+        try:
+            if hwnd:
+                winenv.restore_window(hwnd)     # 最小化时浏览器不渲染，先恢复
+        except Exception:
+            pass
     else:
         ox, oy = rect[0], rect[1]
     print(f"窗口: {title}")
