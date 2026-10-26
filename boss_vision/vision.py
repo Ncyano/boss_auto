@@ -206,10 +206,20 @@ def progress_icon(img: np.ndarray, btn: Rect) -> dict:
 
     import cv2
 
-    if strip.shape[0] < tmpl.shape[0] or strip.shape[1] < tmpl.shape[1]:
-        return {"score": 0.0, "present": False, "ambiguous": False, "pixels": n}
-    res = cv2.matchTemplate(strip, tmpl, cv2.TM_CCOEFF_NORMED)
-    score = float(res.max())
+    # 模板可能在另一种分辨率下截的：按按钮宽度估算的 k 做多尺度匹配，
+    # 取最佳分数，避免"同一模板在宽屏上人人 1.000 / 在窄屏上人人 0.46"。
+    best = 0.0
+    ratios = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4, 1.6, 1.8, 2.0]
+    for ratio in ratios:
+        scale = k * ratio
+        w = max(4, int(round(tmpl.shape[1] * scale)))
+        h = max(4, int(round(tmpl.shape[0] * scale)))
+        if h > strip.shape[0] or w > strip.shape[1]:
+            continue
+        t2 = cv2.resize(tmpl, (w, h), interpolation=cv2.INTER_AREA)
+        res = cv2.matchTemplate(strip, t2, cv2.TM_CCOEFF_NORMED)
+        best = max(best, float(res.max()))
+    score = best
     return {"score": round(score, 3),
             "present": score >= ICON_MATCH_MIN,
             "ambiguous": 0.5 <= score < ICON_MATCH_MIN,
