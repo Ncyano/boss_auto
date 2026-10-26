@@ -323,6 +323,8 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             _cdp._CDP_INSTANCE = None
             c = _cdp.CDP()
             c.set_window_rect(rect)
+            print(f"  CDP 标定：窗口 {c.calibrated['win_px']} / 页面 {c.calibrated['page_css']}"
+                  f" CSS / 缩放 {c.calibrated['scale']}（dpr={c.calibrated['dpr']}）")
             _we._CDP_CLIENT[0] = c
     except Exception:
         pass

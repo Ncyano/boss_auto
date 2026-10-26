@@ -164,9 +164,31 @@ class CDP:
             return {}
 
     def set_window_rect(self, rect) -> None:
-        """告诉 CDP 窗口在屏幕上的位置/尺寸（像素），用于分辨率无关的换算。"""
+        """用"截图像素尺寸 / 页面 CSS 尺寸"自动标定缩放比。
+
+        这样换分辨率、改系统缩放、换显示器都不需要手改参数：
+            scale = 窗口像素宽 / 页面 CSS 宽（outerWidth）
+            内容原点 = 窗口左上 + 边框（由 outer-inner 差值推）
+        """
         self.win_rect = tuple(rect) if rect else None
         self.geo = self.geometry()
+        geo = self.geo
+        self.scale = float(geo.get("dpr") or 1) or 1.0
+        if rect and geo.get("ow"):
+            try:
+                guess = float(rect[2]) / float(geo["ow"])
+                # 合理范围才采纳（防止窗口被系统裁剪导致误判）
+                if 0.5 <= guess <= 4.0:
+                    self.scale = guess
+            except Exception:
+                pass
+        self.calibrated = {
+            "win_px": (rect[2], rect[3]) if rect else None,
+            "page_css": (geo.get("ow"), geo.get("oh")),
+            "inner_css": (geo.get("iw"), geo.get("ih")),
+            "scale": round(self.scale, 3),
+            "dpr": geo.get("dpr"),
+        }
 
     def _to_css(self, screen_x: int, screen_y: int) -> tuple[float, float]:
         """屏幕坐标 -> 页面 CSS 坐标（分辨率/缩放无关）。
@@ -175,7 +197,7 @@ class CDP:
         内容原点 = 窗口左上角 + 边框偏移（由 outer-inner 差值推）
         """
         geo = getattr(self, "geo", None) or self.geometry()
-        dpr = float(geo.get("dpr") or 1) or 1.0
+        dpr = float(getattr(self, "scale", None) or geo.get("dpr") or 1) or 1.0
         rect = getattr(self, "win_rect", None)
         if not rect:
             # 没有窗口信息时退化为"用浏览器自报的屏幕坐标当原点"
