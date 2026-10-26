@@ -540,7 +540,11 @@ def _judge_work(row: dict) -> dict | None:
         import judge as _judge
         if not _judge.available():
             return None
-        text = (row.get("工作经历全文") or row.get("全部工作经历") or "").strip()
+        # 用过滤后的文本：酒店前台/人力资源/会计等整段已被排除，
+        # 否则模型会把"酒店前台客诉处理"当成客户沟通经验
+        text = work_text(row).strip()
+        if not text:
+            text = (row.get("工作经历全文") or row.get("全部工作经历") or "").strip()
         if not text:
             parts = []
             for i in range(1, 11):
