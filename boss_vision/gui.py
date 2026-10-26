@@ -220,7 +220,8 @@ class App:
     def on_start(self) -> None:
         if self.worker and self.worker.is_alive():
             return
-        if vision_window_missing():
+        # 后台模式下不依赖窗口标题（浏览器可最小化/被遮挡），跳过窗口检查
+        if not bool(self.var_background.get()) and vision_window_missing():
             if not messagebox.askyesno("提示", "没检测到标题含「BOSS直聘」的窗口。\n仍然开始吗？"):
                 return
 

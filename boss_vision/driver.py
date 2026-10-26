@@ -314,6 +314,14 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         capture: str = "screen", url: str = "") -> int:
     winenv.enable_dpi_awareness()
     found = winenv.find_window("BOSS直聘")
+    if not found and capture == "cdp":
+        # 后台模式不依赖窗口标题：浏览器即使最小化/被遮挡也能通过 CDP 拿到页面
+        import cdp as _cdp0
+        if _cdp0.available():
+            _g = _cdp0.CDP().geometry()
+            _cdp0.reset_cdp() if hasattr(_cdp0, "reset_cdp") else None
+            found = (0, (0, 0, int(_g.get("iw") or 1280), int(_g.get("ih") or 800)),
+                     "BOSS直聘（后台模式）")
     if not found:
         print("没找到标题含「BOSS直聘」的窗口，请先把 BOSS 页面打开。")
         return 2
