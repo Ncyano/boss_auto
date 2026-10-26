@@ -320,11 +320,14 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
     hwnd, rect, title = found
     # 后台模式：用浏览器自渲染截图，坐标即页面 CSS 坐标
     if capture == "cdp":
-        try:
+        import cdp as _cdpmod
+        if _cdpmod.available():
             winenv.set_capture("cdp")
-            print(f"  抓图模式: CDP（后台运行，窗口可被遮挡）")
-        except Exception as exc:
-            print(f"  [warn] 切换 CDP 抓图失败，退回屏幕抓图：{exc}")
+            print("  抓图模式: CDP（后台运行，窗口可被遮挡）")
+        else:
+            print("  [warn] 后台模式需要调试端口，但 9222 连不上 —— 退回屏幕抓图。")
+            print("         请用 run-edge-debug.cmd 启动浏览器（会带调试端口），"
+                  "并确认那个窗口开着 BOSS 页面。")
     if winenv.capture_mode() == "cdp":
         ox, oy = 0, 0
     else:

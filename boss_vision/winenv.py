@@ -91,7 +91,12 @@ def capture_mode() -> str:
 def grab_window(rect: tuple[int, int, int, int]) -> np.ndarray:
     """抓窗口画面。cdp 模式用浏览器截图（窗口被遮挡也可以）。"""
     if _CAPTURE_MODE[0] == "cdp":
-        return _cdp_client().screenshot()
+        try:
+            return _cdp_client().screenshot()
+        except Exception as exc:
+            print(f"  [warn] CDP 截图失败（{exc}），本次退回屏幕抓图")
+            set_capture("screen")
+            return _grab_screen(rect)
     return _grab_screen(rect)
 
 
