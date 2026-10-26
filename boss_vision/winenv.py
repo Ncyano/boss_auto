@@ -158,7 +158,7 @@ def grab_window(rect: tuple[int, int, int, int]) -> np.ndarray:
             print(f"  [warn] CDP 截图失败（{exc}），退回屏幕抓图（坐标需重新标定）")
             set_capture("screen")
             _NEED_REBASE[0] = True      # 通知 driver 重新定位窗口与坐标原点
-            return _grab_screen(rect)
+            raise CaptureDowngraded("CDP 截图失败，已切换到屏幕抓图")
     return _grab_screen(rect)
 
 
@@ -618,6 +618,10 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
         return True
     except Exception:
         return False
+
+
+class CaptureDowngraded(RuntimeError):
+    """抓图方式被降级（CDP -> 屏幕），当前这一轮必须中止并重新标定坐标。"""
 
 
 def scroll_at(x: int, y: int, clicks: int = -3) -> None:

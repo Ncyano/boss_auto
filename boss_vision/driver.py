@@ -506,26 +506,34 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         """是否已达目标：count_valid 时只算真正打招呼成功的，否则算尝试次数。"""
         return (valid if count_valid else handled) >= limit
 
+    def _rebase() -> bool:
+        """抓图方式变化后重新定位窗口并重算坐标原点。成功返回 True。"""
+        winenv._NEED_REBASE[0] = False
+        refound = winenv.find_window("BOSS直聘")
+        if not refound:
+            print("  [warn] 找不到 BOSS 窗口 —— 暂停 3 秒后重试")
+            time.sleep(3.0)
+            return False
+        h2, r2, t2 = refound
+        try:
+            import cdp as _cdpm3
+            if _cdpm3.available():
+                _c3 = _cdpm3.CDP()
+                _c3.set_window_rect(r2)
+                _c3.close()
+        except Exception:
+            pass
+        print(f"  已重新标定：窗口 {t2[:20]} 原点 ({r2[0]},{r2[1]})，抓图={winenv.capture_mode()}")
+        return (h2, r2, t2)
+
     while not reached() and handled < max_attempts and not STOP:
         # 抓图方式被降级（CDP 失败 -> 屏幕抓图）：必须重新定位窗口并重算坐标原点
         if winenv._NEED_REBASE[0]:
-            winenv._NEED_REBASE[0] = False
-            refound = winenv.find_window("BOSS直聘")
-            if not refound:
-                print("  [warn] 已退回屏幕抓图，但找不到 BOSS 窗口 —— 暂停 3 秒后重试")
-                time.sleep(3.0)
+            fixed = _rebase()
+            if not fixed:
                 continue
-            hwnd, rect, title = refound
+            hwnd, rect, title = fixed
             ox, oy = rect[0], rect[1]
-            try:
-                import cdp as _cdpm2
-                if _cdpm2.available():
-                    _c2 = _cdpm2.CDP()
-                    _c2.set_window_rect(rect)
-                    _c2.close()
-            except Exception:
-                pass
-            print(f"  已重新标定：窗口 {title[:20]} 原点 ({ox},{oy})，抓图=屏幕")
         # 统一清理：上一轮若有分支没关弹窗（重复/异常），这里先补关一次，避免卡在简历页
         if modal_open[0]:
             print("  上一轮弹窗未关闭，先关闭再继续")
@@ -555,6 +563,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 time.sleep(0.6)
                 waited += 0.6
                 p = plan(winenv.grab_window(rect), icon_check)
+                if winenv._NEED_REBASE[0]:
+                    print("  截图来源已降级，本轮中止，重新标定后再继续")
+                    continue
                 if frame_key(p) == frame_key(prev):
                     stable = True
                     break
@@ -681,10 +692,16 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 continue
             time.sleep(3.0)
             pa = plan(winenv.grab_window(rect), icon_check)
+            if winenv._NEED_REBASE[0]:
+                print("  截图来源已降级，本轮中止，重新标定后再继续")
+                continue
             if [c.y for c in pa["cards"]] == before:
                 print("  警告：刷新前后卡片位置没变，可能是页面还没重载完（再等 2 秒）")
                 time.sleep(2.0)
                 pa = plan(winenv.grab_window(rect), icon_check)
+                if winenv._NEED_REBASE[0]:
+                    print("  截图来源已降级，本轮中止，重新标定后再继续")
+                    continue
             print(f"  刷新后：卡片 {len(pa['cards'])} 张，跳过 {sum(1 for s in pa['skip'] if s)} 张")
             continue
 
@@ -727,6 +744,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             p2 = None
             for _ in range(8):
                 p2 = plan(winenv.grab_window(rect), icon_check)
+                if winenv._NEED_REBASE[0]:
+                    print("  截图来源已降级，本轮中止，重新标定后再继续")
+                    continue
                 if p2["state"] == "resume_modal":
                     opened = True
                     modal_open[0] = True

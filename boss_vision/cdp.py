@@ -120,19 +120,32 @@ class CDP:
             _PINNED_PAGE[0] = self._page_ws_url(page_match)
         self.ws = _WS(_PINNED_PAGE[0])
         self.view = self._call("Page.getLayoutMetrics") or {}
+        # 校验：固定下来的页签确实是 BOSS，否则后续操作可能串到别的页面
+        try:
+            href = (self._call("Runtime.evaluate",
+                               {"expression": "location.href",
+                                "returnByValue": True}).get("result") or {}).get("value") or ""
+            self.href = str(href)
+            if "zhipin.com" not in self.href:
+                print(f"  [warn] 当前 CDP 页签不是 BOSS：{self.href[:60]}")
+        except Exception:
+            self.href = ""
         self._send("Page.enable")
 
     # ---------- 发现页签 ----------
-    def _page_ws_url(self, page_match: str) -> str:
+    def _page_ws_url(self, page_match: str = "") -> str:
         url = f"http://127.0.0.1:{self.port}/json"
         with urllib.request.urlopen(url, timeout=5) as resp:
             targets = json.loads(resp.read().decode())
         pages = [t for t in targets if t.get("type") == "page"]
         if not pages:
             raise RuntimeError("浏览器里没有可用页签")
-        if page_match:
+        # 优先 BOSS 页签：显式 page_match，其次默认 zhipin.com，最后才退回第一个
+        for key in (page_match, "zhipin.com", "BOSS直聘"):
+            if not key:
+                continue
             for t in pages:
-                if page_match in (t.get("url") or "") or page_match in (t.get("title") or ""):
+                if key in (t.get("url") or "") or key in (t.get("title") or ""):
                     return t["webSocketDebuggerUrl"]
         return pages[0]["webSocketDebuggerUrl"]
 
