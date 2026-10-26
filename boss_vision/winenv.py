@@ -388,7 +388,8 @@ def greet() -> bool:
     if _cdp_mode():
         try:
             cli = _cdp_client()
-            if cli.click_text("打招呼", exact=True, container="resumeGreet"):
+            if cli.click_element("打招呼", container="resumeGreet") or \
+                    cli.click_text("打招呼", exact=True, container="resumeGreet"):
                 time.sleep(1.0)
                 # 校验：打成功后 BOSS 会把按钮变成「继续沟通」
                 if cli.find_text("继续沟通") or cli.find_text("继续"):

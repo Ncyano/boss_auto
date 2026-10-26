@@ -372,6 +372,46 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         return int(res["result"].get("value") or 0)
 
+    def click_element(self, text: str, container: str = "", exact: bool = True) -> bool:
+        """找到按钮的 CSS 坐标，用 CDP 派发真实鼠标事件（JS click 有些站不认）。"""
+        js = (
+            "(() => {"
+            " const T=TXT, C=CONT, EX=EXACT;"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " for (const d of docs) {"
+            "   const W=(d.defaultView||window);"
+            "   const fr=d===document?{x:0,y:0}:null;"
+            "   for (const e of d.querySelectorAll('a,button,span,div')) {"
+            "     const t=(e.textContent||'').trim();"
+            "     if (EX ? t!==T : t.indexOf(T)<0) continue;"
+            "     const r=e.getBoundingClientRect();"
+            "     if (!(r.width>10 && r.height>10)) continue;"
+            "     if (!(r.top>=-4 && r.bottom<=W.innerHeight+4 && r.left>=-4 && r.right<=W.innerWidth+4)) continue;"
+            "     if (C) { let n=e, ok=false; while(n){ if(((n.className||'')+'').indexOf(C)>=0){ok=true;break;} n=n.parentElement; } if(!ok) continue; }"
+            "     return JSON.stringify({x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2),"
+            "       tag:e.tagName, cls:(e.className||'').toString().slice(0,30)});"
+            "   }"
+            " }"
+            " return ''; })()"
+        ).replace("TXT", json.dumps(text)).replace("CONT", json.dumps(container or "")).replace("EXACT", "true" if exact else "false")
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        info = res["result"].get("value") or ""
+        if not info:
+            return False
+        try:
+            box = json.loads(info)
+        except Exception:
+            return False
+        cx, cy = float(box["x"]), float(box["y"])
+        base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "buttons": 1}
+        self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy, "button": "none", "buttons": 0})
+        self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
+        self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
+        self.last_click = box
+        return True
+
     def click_text(self, text: str, exact: bool = True, container: str = "") -> bool:
         """在可见区域里找文字匹配的元素并 click()。
 
