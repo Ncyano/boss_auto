@@ -528,8 +528,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         below = [(k, i) for k, i in enumerate(p["todo"])
                  if p["cards"][i].y > last_click_y + 30]
         if below:
-            order = [k for k, _ in below] + [k for k, _ in order if k not in
-                                              {k2 for k2, _ in below}]
+            below_ks = [k for k, _ in below]
+            below_set = set(below_ks)
+            order = below_ks + [k for k in order if k not in below_set]
         for k in order:
             idx = p["todo"][k]
             if sigs[idx] and sigs[idx] in seen_sigs:
