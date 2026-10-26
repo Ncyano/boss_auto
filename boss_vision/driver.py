@@ -919,6 +919,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
 
             # 合适 -> 点「打招呼」（页面内点击，不移动鼠标）
             record["greeted"] = False
+            if verdict.get("verdict") == "合适":
+                print(f"     [打招呼检查] live={live} modal_open={modal_open[0]} "
+                      f"status={status}")
             if verdict.get("verdict") == "合适" and status == "正常" and live:
                 try:
                     if modal_open[0]:

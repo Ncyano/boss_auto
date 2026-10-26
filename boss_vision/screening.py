@@ -235,9 +235,18 @@ def strip_excluded_duties(work: list[dict], keywords=None) -> list[dict]:
     return out
 
 def _excluded_title(title: str) -> bool:
-    """整段岗位属于"酒店前台/前台/人力资源"这类，不算运营/客户沟通经历。"""
+    """整段岗位属于"酒店前台/人力资源/会计/财务"这类，不算运营/客户沟通经历。
+
+    词表来自知识库 W07.exclude_duty_keywords（可随时扩充），并兼容常量兜底。
+    """
     t = str(title or "")
-    if not any(k in t for k in EXCLUDE_DUTY_KEYWORDS):
+    words = set(EXCLUDE_DUTY_KEYWORDS)
+    try:
+        import kb as _kb
+        words |= set((_kb.params_of(_kb.load(), "W07") or {}).get("exclude_duty_keywords") or [])
+    except Exception:
+        pass
+    if not any(k and k in t for k in words):
         return False
     return not any(x in t for x in ("运营", "客服", "电商", "直播", "销售", "社群"))
 
