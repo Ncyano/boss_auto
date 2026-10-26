@@ -79,6 +79,55 @@ def find_window(keyword: str = "BOSS直聘") -> tuple[int, tuple[int, int, int, 
     return hits[0] if hits else None
 
 
+def launch_debug_browser(url: str = "", port: int = 9222, wait: float = 25.0) -> bool:
+    """用一个独立配置目录启动 Edge 并打开调试端口，返回端口是否就绪。
+
+    独立 user-data-dir 不会影响用户正在用的 Edge；登录态留在里面，下次复用。
+    """
+    import os
+    import subprocess
+    import time as _t
+
+    cands = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    exe = next((c for c in cands if os.path.exists(c)), None)
+    if not exe:
+        print("  [warn] 没找到 Edge/Chrome 可执行文件")
+        return False
+
+    profile = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                           "boss-cdp-profile")
+    os.makedirs(profile, exist_ok=True)
+    cmd = [exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}",
+           "--no-first-run", "--no-default-browser-check"]
+    if url:
+        cmd.append(url)
+    print(f"  启动浏览器（独立配置）：{os.path.basename(exe)} 端口 {port}")
+    try:
+        subprocess.Popen(cmd, close_fds=True)
+    except Exception as exc:
+        print(f"  [warn] 启动浏览器失败：{exc}")
+        return False
+
+    import urllib.request
+    deadline = _t.time() + wait
+    while _t.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1.5):
+                reset_cdp()
+                return True
+        except Exception:
+            _t.sleep(0.6)
+    print(f"  [warn] {int(wait)} 秒内调试端口没起来。")
+    print("         常见原因：已经有一个普通 Edge 正在运行，新的启动请求被它接管了。")
+    print("         请完全退出所有 Edge 窗口（含后台进程）后重试，")
+    print("         或手动运行 run-edge-debug.cmd 再点开始。")
+    return False
+
 def set_capture(mode: str) -> None:
     """切换抓图方式：screen（屏幕抓图）或 cdp（浏览器自渲染，被遮挡也能截）。"""
     _CAPTURE_MODE[0] = "cdp" if mode == "cdp" else "screen"

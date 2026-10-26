@@ -325,9 +325,18 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             winenv.set_capture("cdp")
             print("  抓图模式: CDP（后台运行，窗口可被遮挡）")
         else:
-            print("  [warn] 后台模式需要调试端口，但 9222 连不上 —— 退回屏幕抓图。")
-            print("         请用 run-edge-debug.cmd 启动浏览器（会带调试端口），"
-                  "并确认那个窗口开着 BOSS 页面。")
+            print("  调试端口未开，自动启动带调试端口的浏览器…")
+            if winenv.launch_debug_browser(url or "https://www.zhipin.com/web/chat/recommend"):
+                found = winenv.find_window("BOSS直聘") or found
+                if _cdpmod.available():
+                    winenv.set_capture("cdp")
+                    print("  抓图模式: CDP（后台运行，窗口可被遮挡）")
+                    url = ""          # 已经打开过了，避免再导航一次
+                else:
+                    print("  [warn] 浏览器起来了但端口仍不通，退回屏幕抓图")
+            else:
+                print("  [warn] 无法启动浏览器 —— 退回屏幕抓图。")
+                print("         也可以先运行 run-edge-debug.cmd 再点开始。")
     if winenv.capture_mode() == "cdp":
         ox, oy = 0, 0
     else:
