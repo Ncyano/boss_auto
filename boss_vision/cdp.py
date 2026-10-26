@@ -196,6 +196,35 @@ class CDP:
                    {"type": "mouseWheel", "x": cx, "y": cy,
                     "deltaX": 0, "deltaY": delta_y})
 
+    def scroll_at(self, x: int, y: int, delta_y: int) -> int:
+        """滚"坐标下方那个可滚动元素"（列表 iframe / 简历弹窗都能用）。"""
+        cx, cy = self._to_css(x, y)
+        js = (
+            "(() => {"
+            " let el = document.elementFromPoint(CX, CY);"
+            " let doc = document;"
+            " if (el && el.tagName === 'IFRAME') {"
+            "   try { const d = el.contentDocument;"
+            "     el = d.elementFromPoint(CX, CY) || d.body; doc = d; } catch (e) {} }"
+            " while (el) {"
+            "   const cs = getComputedStyle(el);"
+            "   const oy = cs.overflowY;"
+            "   if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 10) {"
+            "     el.scrollTop += D;"
+            "     return Math.round(el.scrollTop);"
+            "   }"
+            "   el = el.parentElement;"
+            " }"
+            " const se = doc.scrollingElement || doc.documentElement;"
+            " se.scrollTop += D;"
+            " return Math.round(se.scrollTop);"
+            "})()"
+        ).replace("CX", str(int(cx))).replace("CY", str(int(cy))).replace("D", str(int(delta_y)))
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        if res.get("exceptionDetails"):
+            raise RuntimeError(str(res["exceptionDetails"].get("text")))
+        return int(res["result"].get("value") or 0)
+
     def scroll_js(self, delta_y: int) -> int:
         """用 JS 直接滚页面（含 iframe 里的推荐列表），完全不产生鼠标事件。
 

@@ -366,6 +366,17 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
     return ok, msg
 
 
+def scroll_at(x: int, y: int, clicks: int = -3) -> None:
+    """在 (x, y) 处滚动"该位置的容器"（简历弹窗/列表都能用），不移动鼠标。"""
+    if _cdp_mode() and _CDP_SCROLL_OK[0]:
+        try:
+            _cdp_client().scroll_at(x, y, -clicks * 120)
+            return
+        except Exception:
+            reset_cdp()
+    # 兜底：真实滚轮
+    scroll(x, y, clicks)
+
 def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
     if _cdp_mode() and _CDP_SCROLL_OK[0]:
         try:
