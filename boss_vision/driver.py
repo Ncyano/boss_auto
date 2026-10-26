@@ -326,6 +326,11 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         print("没找到标题含「BOSS直聘」的窗口，请先把 BOSS 页面打开。")
         return 2
     hwnd, rect, title = found
+    try:
+        import cdp as _cdpmt
+        _cdpmt.bind_window_title(title)
+    except Exception:
+        pass
     # 后台模式：用浏览器自渲染截图，坐标即页面 CSS 坐标
     if capture == "cdp":
         import cdp as _cdpmod
@@ -507,8 +512,11 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         return (valid if count_valid else handled) >= limit
 
     def _rebase() -> bool:
-        """抓图方式变化后重新定位窗口并重算坐标原点。成功返回 True。"""
-        winenv._NEED_REBASE[0] = False
+        """抓图方式变化后重新定位窗口并重算坐标原点。成功返回 True。
+
+        注意：只有确认重新定位成功才清除降级标志；失败时保留标志，
+        下一轮仍会走重定位，绝不沿用旧坐标。
+        """
         refound = winenv.find_window("BOSS直聘")
         if not refound:
             print("  [warn] 找不到 BOSS 窗口 —— 暂停 3 秒后重试")
@@ -523,6 +531,12 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 _c3.close()
         except Exception:
             pass
+        try:
+            import cdp as _cdpm4
+            _cdpm4.bind_window_title(t2)
+        except Exception:
+            pass
+        winenv._NEED_REBASE[0] = False        # 确认成功后才清标志
         print(f"  已重新标定：窗口 {t2[:20]} 原点 ({r2[0]},{r2[1]})，抓图={winenv.capture_mode()}")
         return (h2, r2, t2)
 
@@ -736,7 +750,15 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 if _nm and _vlm_pre.is_plausible_name(_nm):
                     pre_card_name = _nm
             except Exception as exc:
+                if "CaptureDowngraded" in type(exc).__name__:
+                    print("  截图来源已降级，本轮不点击，重新标定后再继续")
+                    continue
                 print(f"     [warn] 卡片姓名读取失败：{exc}")
+
+            # 兜底：即使异常被上面的 except 吞掉，只要发生了降级就绝不点击
+            if winenv._NEED_REBASE[0]:
+                print("  截图来源已降级，本轮不点击，重新标定后再继续")
+                continue
 
             winenv.click(ox + cx, oy + cy)
             time.sleep(1.0)

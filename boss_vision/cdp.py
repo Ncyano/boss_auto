@@ -107,6 +107,7 @@ class _WS:
 
 # ------------------------------------------------------------------ CDP
 
+_WINDOW_TITLE = [""]      # BOSS 窗口标题（含当前活动页标题）
 _PINNED_PAGE = [None]      # 固定下来的页面 targetId/ws，所有操作共用同一个页签
 
 
@@ -127,7 +128,7 @@ class CDP:
                                 "returnByValue": True}).get("result") or {}).get("value") or ""
             self.href = str(href)
             if "zhipin.com" not in self.href:
-                print(f"  [warn] 当前 CDP 页签不是 BOSS：{self.href[:60]}")
+                raise RuntimeError(f"当前 CDP 页签不是 BOSS（{self.href[:60]}），已中止以免误操作")
         except Exception:
             self.href = ""
         self._send("Page.enable")
@@ -140,7 +141,15 @@ class CDP:
         pages = [t for t in targets if t.get("type") == "page"]
         if not pages:
             raise RuntimeError("浏览器里没有可用页签")
-        # 优先 BOSS 页签：显式 page_match，其次默认 zhipin.com，最后才退回第一个
+        # 最优先：标题与"屏幕窗口标题"一致的页签（那就是用户正在看的那个）
+        wt = _WINDOW_TITLE[0].strip()
+        if wt:
+            for t in pages:
+                pt = (t.get("title") or "").strip()
+                if pt and (wt.startswith(pt) or pt.startswith(wt.split(" 和另外")[0].strip())):
+                    if "zhipin.com" in (t.get("url") or "") or "BOSS" in pt:
+                        return t["webSocketDebuggerUrl"]
+        # 其次：BOSS 页签（显式 page_match / zhipin.com / 标题关键字）
         for key in (page_match, "zhipin.com", "BOSS直聘"):
             if not key:
                 continue
