@@ -77,3 +77,8 @@ data/运营助理-数据集.去重前.csv
 未命名表格*.xlsx
 *.xlsx
 !data/*.xlsx.template
+
+data/新人事-*.csv
+data/_*.py
+data/parse-new*.log
+data/eval104*.log
