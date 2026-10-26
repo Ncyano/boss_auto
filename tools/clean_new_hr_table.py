@@ -109,8 +109,13 @@ def main() -> int:
     ap.add_argument("--job", default="运营助理", help="岗位关键词（默认 运营助理）")
     ap.add_argument("--no-images", action="store_true", help="不导出截图")
     ap.add_argument("--xlsx", default=str(XLSX))
+    ap.add_argument("--tag", default="", help="输出去重后缀，如 2 -> 新人事-运营助理-2.csv")
     args = ap.parse_args()
 
+    global OUT_CSV, OUT_IMG_DIR
+    if args.tag:
+        OUT_CSV = OUT_CSV.with_name(f"新人事-运营助理-{args.tag}.csv")
+        OUT_IMG_DIR = OUT_IMG_DIR.with_name(f"新人事截图-{args.tag}")
     xlsx = Path(args.xlsx)
     if not xlsx.exists():
         raise SystemExit(f"找不到 {xlsx}")

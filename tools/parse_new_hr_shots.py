@@ -208,8 +208,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--merge", action="store_true")
+    ap.add_argument("--tag", default="", help="批次后缀，如 2 -> 读 新人事-运营助理-2.csv / 写 新人事-解析-2.csv")
     args = ap.parse_args()
 
+    global SRC_CSV, SHOT_DIR, OUT_CSV
+    if args.tag:
+        SRC_CSV = SRC_CSV.with_name(f"新人事-运营助理-{args.tag}.csv")
+        SHOT_DIR = SHOT_DIR.with_name(f"新人事截图-{args.tag}")
+        OUT_CSV = OUT_CSV.with_name(f"新人事-解析-{args.tag}.csv")
     rows = list(csv.DictReader(open(SRC_CSV, encoding="utf-8-sig")))
     if args.limit:
         rows = rows[:args.limit]

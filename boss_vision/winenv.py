@@ -137,7 +137,50 @@ class InputBlocked(RuntimeError):
     """注入被拦：光标没有到达目标位置，此时绝不能按下按键。"""
 
 
+# ---------------- CDP 模式：光标完全不动 ----------------
+_CDP_CLIENT = [None]
+
+
+def _cdp_mode() -> bool:
+    """config.input.mode == "cdp" 且调试端口在线时，走无鼠标路径。"""
+    try:
+        import settings
+        cfg = settings.load()
+        mode = str((cfg.get("input") or {}).get("mode") or "").lower()
+    except Exception:
+        return False
+    if mode != "cdp":
+        return False
+    try:
+        import cdp as _cdp
+        return _cdp.available()
+    except Exception:
+        return False
+
+
+def _cdp_client():
+    if _CDP_CLIENT[0] is None:
+        import cdp as _cdp
+        _CDP_CLIENT[0] = _cdp.CDP()
+    return _CDP_CLIENT[0]
+
+
+def reset_cdp() -> None:
+    """浏览器重启后旧连接会失效，重连一次。"""
+    try:
+        if _CDP_CLIENT[0] is not None:
+            _CDP_CLIENT[0].close()
+    except Exception:
+        pass
+    _CDP_CLIENT[0] = None
+
 def click(x: int, y: int, settle: tuple[float, float] = (0.06, 0.14), tolerance: int = 6) -> None:
+    if _cdp_mode():
+        try:
+            _cdp_client().click(x, y)
+            return
+        except Exception:
+            reset_cdp()          # 连接失效就退回真实鼠标，别卡住流程
     """移动到 (x, y)，**确认光标真的到位**后才按下左键。
 
     为什么要确认：按下事件的坐标若不带 MOVE 标志会被忽略，一旦"移动被拦而按键没被拦"，
@@ -311,6 +354,12 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
 
 
 def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
+    if _cdp_mode():
+        try:
+            _cdp_client().wheel(x, y, clicks * 120)
+            return
+        except Exception:
+            reset_cdp()
     """在 (x, y) 处滚轮。clicks 为负表示向下滚。同样要求光标先到位。"""
     move_to(x, y, duration=0.2)
     time.sleep(0.06)
