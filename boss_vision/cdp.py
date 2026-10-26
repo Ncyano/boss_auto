@@ -372,24 +372,43 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         return int(res["result"].get("value") or 0)
 
-    def click_text(self, text: str, exact: bool = True) -> bool:
-        """在页面里找文字等于/包含 text 的可点击元素并 click()。"""
+    def click_text(self, text: str, exact: bool = True, container: str = "") -> bool:
+        """在可见区域里找文字匹配的元素并 click()。
+
+        要点：页面里同时存在很多「打招呼」按钮（列表里每张卡一个，多数滚出视口），
+        必须只点"当前视口内可见"的那个，否则会点到屏幕外的卡片。
+        container 用于优先选择位于某个容器（class 关键字）里的按钮，如 resumeGreet。
+        """
         js = (
             "(() => {"
-            " const T=TXT, EX=EXACT;"
-            " const els=[...document.querySelectorAll('a,button,span,div')];"
-            " const hit=els.find(e=>{"
-            "   const t=(e.textContent||'').trim();"
-            "   if (EX ? t!==T : t.indexOf(T)<0) return false;"
-            "   const r=e.getBoundingClientRect();"
-            "   if (!(r.width>10 && r.height>10)) return false;"
-            "   const cs=getComputedStyle(e);"
-            "   return cs.visibility!=='hidden' && cs.display!=='none';"
-            " });"
-            " if(!hit) return false;"
-            " hit.click(); return true;"
-            "})()"
+            " const T=TXT, EX=EXACT, C=CONT;"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " const hits=[];"
+            " for (const d of docs) {"
+            "   const W=(d.defaultView||window);"
+            "   for (const e of d.querySelectorAll('a,button,span,div')) {"
+            "     const t=(e.textContent||'').trim();"
+            "     if (EX ? t!==T : t.indexOf(T)<0) continue;"
+            "     const r=e.getBoundingClientRect();"
+            "     if (!(r.width>10 && r.height>10)) continue;"
+            "     const cs=W.getComputedStyle(e);"
+            "     if (cs.visibility==='hidden' || cs.display==='none') continue;"
+            "     const visible = r.top>=-4 && r.bottom<=W.innerHeight+4"
+            "       && r.left>=-4 && r.right<=W.innerWidth+4;"
+            "     if (!visible) continue;"
+            "     let inC=false;"
+            "     if (C) { let n=e; while(n){ if(((n.className||'')+'').indexOf(C)>=0){inC=true;break;} n=n.parentElement; } }"
+            "     hits.push({e, inC, area: r.width*r.height});"
+            "   }"
+            " }"
+            " if (!hits.length) return false;"
+            " hits.sort((a,b)=> (b.inC?1:0)-(a.inC?1:0) || a.area-b.area);"
+            " hits[0].e.click();"
+            " return true; })()"
         ).replace("TXT", json.dumps(text)).replace("EXACT", "true" if exact else "false")
+        js = js.replace("CONT", json.dumps(container or ""))
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
         return bool(res["result"].get("value"))
 

@@ -388,9 +388,12 @@ def greet() -> bool:
     if _cdp_mode():
         try:
             cli = _cdp_client()
-            for kw, exact in (("打招呼", True), ("打招呼", False)):
-                if cli.click_text(kw, exact=exact):
-                    return True
+            if cli.click_text("打招呼", exact=True, container="resumeGreet"):
+                return True
+            if cli.click_text("打招呼", exact=True):
+                return True
+            if cli.click_text("打招呼", exact=False, container="resumeGreet"):
+                return True
             cands = cli.find_text("招呼")
             print(f"     [诊断] 含「招呼」的元素 {len(cands)} 个: {cands[:3]}")
         except Exception as exc:
