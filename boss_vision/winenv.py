@@ -590,7 +590,10 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
     if _cdp_mode() and x and y:
         try:
             before = _cdp_client().modal_scroll_top()
-            _cdp_client().wheel(x, y, delta)
+            if _CAPTURE_MODE[0] == "cdp":
+                _cdp_client().scroll_css(int(x), int(y), delta)
+            else:
+                _cdp_client().wheel(x, y, delta)
             import time as _t
             _t.sleep(0.25)
             after = _cdp_client().modal_scroll_top()
