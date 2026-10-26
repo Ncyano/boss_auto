@@ -507,6 +507,25 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         return (valid if count_valid else handled) >= limit
 
     while not reached() and handled < max_attempts and not STOP:
+        # 抓图方式被降级（CDP 失败 -> 屏幕抓图）：必须重新定位窗口并重算坐标原点
+        if winenv._NEED_REBASE[0]:
+            winenv._NEED_REBASE[0] = False
+            refound = winenv.find_window("BOSS直聘")
+            if not refound:
+                print("  [warn] 已退回屏幕抓图，但找不到 BOSS 窗口 —— 暂停 3 秒后重试")
+                time.sleep(3.0)
+                continue
+            hwnd, rect, title = refound
+            ox, oy = rect[0], rect[1]
+            try:
+                import cdp as _cdpm2
+                if _cdpm2.available():
+                    _c2 = _cdpm2.CDP()
+                    _c2.set_window_rect(rect)
+                    _c2.close()
+            except Exception:
+                pass
+            print(f"  已重新标定：窗口 {title[:20]} 原点 ({ox},{oy})，抓图=屏幕")
         # 统一清理：上一轮若有分支没关弹窗（重复/异常），这里先补关一次，避免卡在简历页
         if modal_open[0]:
             print("  上一轮弹窗未关闭，先关闭再继续")
@@ -551,7 +570,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     print("  页面一直不稳定，但刷新已禁用 -> 停止")
                     break
                 render_fails += 1
-                if render_fails > max_refresh:
+                if max_refresh is not None and render_fails > max_refresh:
                     print(f"  连续 {render_fails - 1} 次都没稳定 -> 停止（页面卡住或注入被拦）")
                     break
                 print(f"  页面未稳定 -> 刷新重来，本轮不点击（第 {render_fails} 次）")
@@ -937,6 +956,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 "verdict": "不合适", "status": "调用失败",
                 "reason": "判定超时（60 秒未返回）", "stage": "error"}
             record["judgment"] = verdict
+            results.append(record)          # 先落库：后面即使关弹窗失败也不丢这条
             status = verdict.get("status") or "正常"
             flag = "" if status == "正常" else f"，{status}"
             print(f"     ➜ 判定：{verdict['verdict']}"
@@ -985,7 +1005,8 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 gap = wait_between_candidates(min_gap, max_gap)
             record["gap_before_next"] = round(gap, 1)
 
-            results.append(record)
+            if record not in results:
+                results.append(record)
             last_record_at[:] = [time.time()]
             dump_results(with_csv=False)   # 增量只写 json，csv 在结束时统一生成
 

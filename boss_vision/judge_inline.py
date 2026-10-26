@@ -47,6 +47,17 @@ def record_to_row(rec: dict) -> dict:
         row[f"第{i}家公司"] = w.get("company", "")
         row[f"第{i}家职位"] = w.get("title", "")
         row[f"第{i}家起止"] = w.get("period", "")
+    # 逐段职责：把 work[i] 的 descriptions 写进「第N家工作内容」，
+    # 这样 screening.work_text() 才能拿到职责（否则模型只看到职位+时间）
+    for i, ent in enumerate((rec.get("work") or [])[:10], 1):
+        if not isinstance(ent, dict):
+            continue
+        descs = [str(d).strip() for d in (ent.get("descriptions") or []) if str(d).strip()]
+        if descs:
+            row[f"第{i}家工作内容"] = "；".join(descs)
+        row.setdefault(f"第{i}家公司", str(ent.get("company") or "").strip())
+        row.setdefault(f"第{i}家职位", str(ent.get("title") or "").strip())
+        row.setdefault(f"第{i}家起止", str(ent.get("period") or "").strip())
     return row
 
 

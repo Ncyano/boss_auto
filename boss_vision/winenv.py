@@ -155,8 +155,9 @@ def grab_window(rect: tuple[int, int, int, int]) -> np.ndarray:
         try:
             return _cdp_client().screenshot()
         except Exception as exc:
-            print(f"  [warn] CDP 截图失败（{exc}），本次退回屏幕抓图")
+            print(f"  [warn] CDP 截图失败（{exc}），退回屏幕抓图（坐标需重新标定）")
             set_capture("screen")
+            _NEED_REBASE[0] = True      # 通知 driver 重新定位窗口与坐标原点
             return _grab_screen(rect)
     return _grab_screen(rect)
 

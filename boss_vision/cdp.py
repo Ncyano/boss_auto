@@ -107,13 +107,18 @@ class _WS:
 
 # ------------------------------------------------------------------ CDP
 
+_PINNED_PAGE = [None]      # 固定下来的页面 targetId/ws，所有操作共用同一个页签
+
+
 class CDP:
     """连到浏览器当前页签，提供 click / wheel / move。"""
 
     def __init__(self, port: int = DEFAULT_PORT, page_match: str = ""):
         self.port = port
         self._id = 0
-        self.ws = _WS(self._page_ws_url(page_match))
+        if _PINNED_PAGE[0] is None:
+            _PINNED_PAGE[0] = self._page_ws_url(page_match)
+        self.ws = _WS(_PINNED_PAGE[0])
         self.view = self._call("Page.getLayoutMetrics") or {}
         self._send("Page.enable")
 

@@ -216,8 +216,12 @@ def judge(work_text: str, kb: dict | None = None, cfg: dict | None = None,
             if data and data.get("final_recommendation"):
                 rec = str(data["final_recommendation"]).strip()
                 if rec not in ("建议合适", "不合适"):
-                    # 模型偶尔仍会输出待复核/其他值，一律按不合适收口（二元口径）
-                    rec = "不合适" if ("不合适" in rec or "待" in rec) else "建议合适"
+                    # 只认这两个枚举值；其他（含"无法判断/待核实"）一律不放行。
+                    # 明确的"不合适"字样仍可收口为不合适，其余视为判断失败。
+                    if "不合适" in rec:
+                        rec = "不合适"
+                    else:
+                        raise ValueError(f"模型结论不在允许范围：{rec[:40]}")
                 results = []
                 for item in (data.get("rule_results") or []):
                     if not isinstance(item, dict):
