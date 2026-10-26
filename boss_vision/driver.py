@@ -209,18 +209,11 @@ def close_modal(rect: tuple[int, int, int, int], origin: tuple[int, int],
     实测 Esc 无效。顺序：点锚点算出的 ✕ -> 点左侧遮罩 -> Esc，每次点完都复检状态。
     """
     ox, oy = origin
-    cands: list[tuple[int, int]] = []
-    if wides:
-        cands.append(vision.close_button(wides[0]))
-    cands.append((int(rect[2] * 0.15), int(rect[3] * 0.5)))
-    for i in range(tries + 2):
+    # 顺序：先在页面内直接点关闭按钮（不依赖坐标），再点算出来的 ✕，
+    # 再点左侧遮罩，最后派发 Esc。每次动作后都复检状态。
+    for i in range(tries + 3):
         try:
-            if i < len(cands):
-                cx, cy = cands[i]
-                print(f"     关闭弹窗：点 ({cx},{cy})")
-                winenv.click(ox + cx, oy + cy)
-            elif i == len(cands):
-                # 页面内找关闭按钮直接 click()：不依赖坐标，窄屏也准
+            if i == 0:
                 print("     关闭弹窗：JS 点关闭按钮")
                 if winenv.close_dialog_by_js():
                     time.sleep(0.8)
@@ -228,6 +221,14 @@ def close_modal(rect: tuple[int, int, int, int], origin: tuple[int, int],
                         return True
                 print("     关闭弹窗：页面内 Esc")
                 winenv.press_escape()
+            elif i == 1 and wides:
+                cx, cy = vision.close_button(wides[0])
+                print(f"     关闭弹窗：点 ✕ ({cx},{cy})")
+                winenv.click(ox + cx, oy + cy)
+            elif i == 2:
+                cx, cy = int(rect[2] * 0.15), int(rect[3] * 0.5)
+                print(f"     关闭弹窗：点遮罩 ({cx},{cy})")
+                winenv.click(ox + cx, oy + cy)
             else:
                 print("     关闭弹窗：Esc")
                 winenv.press_escape()
