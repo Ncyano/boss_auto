@@ -369,8 +369,12 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
 def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
     if _cdp_mode() and _CDP_SCROLL_OK[0]:
         try:
-            # 约定 clicks<0 = 向下滚；CDP 的 deltaY>0 才是向下
-            _cdp_client().wheel(x, y, -clicks * 120)
+            # 约定 clicks<0 = 向下滚；用 JS 直接滚（BOSS 列表在 iframe 里且是虚拟滚动）
+            before = _cdp_client().scroll_top()
+            got = _cdp_client().scroll_js(-clicks * 120)
+            if got != before:
+                return
+            _cdp_client().wheel(x, y, -clicks * 120)   # 退一步试滚轮事件
             return
         except Exception:
             reset_cdp()
