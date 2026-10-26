@@ -1195,7 +1195,8 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     try:
         img0 = winenv.grab_window(rect)
         band0 = panel_band(img0, wide)
-        winenv.scroll_modal(None or -3, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
+        winenv.scroll_modal(-8, rect[0] + band0.x + band0.w // 2,
+                            rect[1] + band0.y + band0.h // 2)
         time.sleep(settle)
     except Exception as exc:
         log(f"  [warn] 回顶失败：{exc}")
