@@ -427,7 +427,7 @@ def scroll_modal_top(x: int | None = None, y: int | None = None) -> bool:
         px = x if x else u.GetSystemMetrics(0) // 2
         py = y if y else u.GetSystemMetrics(1) // 2
         for _ in range(8):
-            scroll(px, py, 6)
+            raw_wheel(px, py, 6)
         return True
     except Exception:
         return False

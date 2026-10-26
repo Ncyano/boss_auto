@@ -98,16 +98,6 @@ def main() -> int:
             m = norm_mode(got["basic"].get("education_mode", ""))
             if m != "未知":
                 r["学历性质"] = m
-        # 逐字段合并：即使条数没变，补回的职责/公司/起止也要写回
-        merged_any = False
-        for k in range(1, 11):
-            w = work[k - 1] if k - 1 < len(work) else {}
-            for src, dst in (("company", "公司"), ("title", "职位"), ("period", "起止")):
-                key = f"第{k}家{dst}"
-                new_val = (w.get(src) or "").strip()
-                if new_val and not str(r.get(key) or "").strip():
-                    r[key] = new_val
-                    merged_any = True
         # 按"经历身份"合并：旧记录优先，新的只补空字段；绝不整段覆盖
         def _slots(row, n=10):
             out = []
@@ -138,6 +128,7 @@ def main() -> int:
             else:
                 if not same.get("descriptions") and e.get("descriptions"):
                     same["descriptions"] = list(e.get("descriptions") or [])
+                    merged_any = True
                 for fld in ("company", "title", "period"):
                     if not (same.get(fld) or "").strip() and (e.get(fld) or "").strip():
                         same[fld] = e.get(fld).strip()
@@ -159,8 +150,8 @@ def main() -> int:
                                  + ("\n" + "\n".join(descs) if descs else ""))
             new_text = "\n".join(texts_all)[:2000]
             old_text = (r.get("工作经历全文") or "").strip()
-            if len(new_text) < len(old_text) * 0.6 and old_text:
-                pass          # 新的比旧的短太多 -> 保留原全文，别把职责丢了
+            if old_text and len(new_text) < len(old_text):
+                pass          # 新全文比旧文短 -> 保留原全文，不覆盖已有职责
             else:
                 r["工作经历全文"] = new_text
             periods = [e.get("period") or "" for e in merged if (e.get("period") or "").strip()]

@@ -247,7 +247,8 @@ class CDP:
             "})()"
         )
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
-        return int(res["result"].get("value") or -1)
+        val = res["result"].get("value")
+        return -1 if val is None else int(val)
 
     def modal_scroll_top(self) -> int:
         js = (
@@ -262,7 +263,8 @@ class CDP:
             "})()"
         )
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
-        return int(res["result"].get("value") or -1)
+        val = res["result"].get("value")
+        return -1 if val is None else int(val)
 
     def scroll_modal(self, delta_y: int) -> int:
         """滚简历弹窗：不依赖坐标，直接找顶层文档里"内容最长的可滚动容器"。
