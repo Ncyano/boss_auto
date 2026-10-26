@@ -124,9 +124,13 @@ def main() -> int:
                 return exact[0]
             if not comp:
                 return None
+            def _conflict(old, per):
+                op = (old.get("period") or "").replace(" ", "").strip()
+                return bool(op and per and op != per)
+
             same_comp = [m for m in entries if (m.get("company") or "").strip() == comp]
-            if len(same_comp) == 1:
-                return same_comp[0]                     # 公司唯一 -> 补齐缺的时间/职位
+            if len(same_comp) == 1 and not _conflict(same_comp[0], per):
+                return same_comp[0]                     # 公司唯一且时间不冲突 -> 补齐缺字段
             if per:
                 cand = [m for m in same_comp
                         if not (m.get("period") or "").strip()]
@@ -178,6 +182,21 @@ def main() -> int:
             r["最近空档月数"] = gap_months(periods)
 
         # 用"合并后真正要保存的字段"重算完整性
+        full_text = (r.get("工作经历全文") or "").strip()
+
+        def _duties_of(company: str, period: str) -> list[str]:
+            """从全文里按公司名切出这一段，切到了才算有职责。"""
+            if not full_text or not company:
+                return []
+            idx = full_text.find(company)
+            if idx < 0:
+                return []
+            tail = full_text[idx + len(company):]
+            # 到下一个"公司名"之前为止：粗略用换行段落判断
+            para = tail.split("\n\n")[0] if "\n\n" in tail else tail[:400]
+            body = [ln.strip() for ln in para.splitlines()[1:] if ln.strip()]
+            return body if sum(len(x) for x in body) >= 8 else []
+
         final_work = []
         for k in range(1, 11):
             c = (r.get(f"第{k}家公司") or "").strip()
@@ -185,7 +204,7 @@ def main() -> int:
             pp = (r.get(f"第{k}家起止") or "").strip()
             if c or t or pp:
                 final_work.append({"company": c, "title": t, "period": pp,
-                                   "descriptions": ["（见全文）"] if (r.get("工作经历全文") or "").strip() else []})
+                                   "descriptions": _duties_of(c, pp)})
         final_edu = ([{"school": r.get("学校", ""), "degree": r.get("学历", ""),
                        "major": r.get("专业", ""), "period": r.get("教育起止", "")}]
                      if (r.get("学校") or r.get("学历")) else [])
