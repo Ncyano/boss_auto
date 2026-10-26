@@ -153,26 +153,40 @@ class CDP:
         return self._send(method, params)
 
     # ---------- 坐标换算：屏幕像素 -> CSS 像素 ----------
-    def _to_css(self, screen_x: int, screen_y: int) -> tuple[float, float]:
-        """把屏幕绝对坐标换成页面 CSS 坐标。
-
-        依赖窗口位置 + 页面缩放。取自 Evaluation 里的 window 信息，
-        取不到就按 1:1 处理（常见情况下是对的）。
-        """
+    def geometry(self) -> dict:
+        """读页面几何信息（CSS 像素），供坐标换算用。"""
+        expr = ("JSON.stringify({sx:screenX, sy:screenY, iw:innerWidth, ih:innerHeight,"
+                " ow:outerWidth, oh:outerHeight, dpr:devicePixelRatio||1})")
+        res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         try:
-            probe = ("(() => { const r = window;"
-                     " return JSON.stringify({sx: r.screenX, sy: r.screenY,"
-                     " ox: r.outerWidth - r.innerWidth, oy: r.outerHeight - r.innerHeight,"
-                     " dpr: r.devicePixelRatio}); })()")
-            res = self._call("Runtime.evaluate",
-                             {"expression": probe, "returnByValue": True})
-            info = json.loads(res["result"]["value"])
+            return json.loads(res["result"].get("value") or "{}")
         except Exception:
-            return float(screen_x), float(screen_y)
-        # 页面内容左上角 ≈ 窗口左上角 + 边框
-        left = info.get("sx", 0) + max(0, (info.get("ox", 0) // 2))
-        top = info.get("sy", 0) + (info.get("oy", 0) - max(0, info.get("ox", 0) // 2))
-        return float(screen_x - left), float(screen_y - top)
+            return {}
+
+    def set_window_rect(self, rect) -> None:
+        """告诉 CDP 窗口在屏幕上的位置/尺寸（像素），用于分辨率无关的换算。"""
+        self.win_rect = tuple(rect) if rect else None
+        self.geo = self.geometry()
+
+    def _to_css(self, screen_x: int, screen_y: int) -> tuple[float, float]:
+        """屏幕坐标 -> 页面 CSS 坐标（分辨率/缩放无关）。
+
+        换算式：css = (screen - 窗口内容原点) / dpr
+        内容原点 = 窗口左上角 + 边框偏移（由 outer-inner 差值推）
+        """
+        geo = getattr(self, "geo", None) or self.geometry()
+        dpr = float(geo.get("dpr") or 1) or 1.0
+        rect = getattr(self, "win_rect", None)
+        if not rect:
+            # 没有窗口信息时退化为"用浏览器自报的屏幕坐标当原点"
+            rect = (geo.get("sx", 0), geo.get("sy", 0))
+        wx, wy = float(rect[0]), float(rect[1])
+        bx = max(0.0, (float(geo.get("ow", 0)) - float(geo.get("iw", 0))) / 2)
+        by = max(0.0, float(geo.get("oh", 0)) - float(geo.get("ih", 0))
+                 - (float(geo.get("ow", 0)) - float(geo.get("iw", 0))) / 2)
+        css_x = (float(screen_x) - wx) / dpr - bx / dpr
+        css_y = (float(screen_y) - wy) / dpr - by / dpr
+        return css_x, css_y
 
     # ---------- 对外操作 ----------
     def move(self, x: int, y: int) -> None:

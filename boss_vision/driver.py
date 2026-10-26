@@ -316,6 +316,16 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
     results: list[dict] = []
     _seen_people: set = set()          # 已采集过的候选人指纹（去重）
     duplicate_skipped = 0              # 因重复被跳过的次数
+    # CDP 坐标换算需要窗口在屏幕上的位置/尺寸（分辨率无关）
+    try:
+        import winenv as _we, cdp as _cdp
+        if _we._cdp_mode():
+            _cdp._CDP_INSTANCE = None
+            c = _cdp.CDP()
+            c.set_window_rect(rect)
+            _we._CDP_CLIENT[0] = c
+    except Exception:
+        pass
     modal_open = [False]               # 当前是否有简历弹窗开着（统一清理用）
     handled = 0
     valid = 0                    # 真正打开并读到内容的次数（"有效人次"）
