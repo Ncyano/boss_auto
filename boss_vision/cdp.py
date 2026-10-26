@@ -393,6 +393,28 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
         return bool(res["result"].get("value"))
 
+    def find_text(self, text: str) -> list[dict]:
+        """列出页面上包含 text 的可点元素（诊断用）。"""
+        js = (
+            "(() => { const T=TXT;"
+            " const out=[];"
+            " for (const e of document.querySelectorAll('a,button,span,div')) {"
+            "   const t=(e.textContent||'').trim();"
+            "   if (!t || t.indexOf(T)<0 || t.length>30) continue;"
+            "   const r=e.getBoundingClientRect();"
+            "   if (!(r.width>10 && r.height>10)) continue;"
+            "   out.push({tag:e.tagName, cls:(e.className||'').toString().slice(0,40),"
+            "     txt:t.slice(0,20), x:Math.round(r.x), y:Math.round(r.y),"
+            "     w:Math.round(r.width), h:Math.round(r.height)});"
+            "   if (out.length>=8) break; }"
+            " return JSON.stringify(out); })()"
+        ).replace("TXT", json.dumps(text))
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        try:
+            return json.loads(res["result"].get("value") or "[]")
+        except Exception:
+            return []
+
     def press_escape(self) -> None:
         """向页面派发 Esc（关闭弹窗最可靠的方式，不需要窗口焦点）。"""
         for kind in ("rawKeyDown", "keyUp"):

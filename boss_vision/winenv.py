@@ -387,9 +387,14 @@ def greet() -> bool:
     """点「打招呼」（页面内 click，不移动鼠标）。成功返回 True。"""
     if _cdp_mode():
         try:
-            if _cdp_client().click_text("打招呼"):
-                return True
-        except Exception:
+            cli = _cdp_client()
+            for kw, exact in (("打招呼", True), ("打招呼", False)):
+                if cli.click_text(kw, exact=exact):
+                    return True
+            cands = cli.find_text("招呼")
+            print(f"     [诊断] 含「招呼」的元素 {len(cands)} 个: {cands[:3]}")
+        except Exception as exc:
+            print(f"     [warn] 打招呼异常：{exc}")
             reset_cdp()
     return False
 
