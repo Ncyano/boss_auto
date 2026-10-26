@@ -399,6 +399,85 @@ class CDP:
         return str(res["result"].get("value") or "")
 
     def click_element(self, text: str, container: str = "", exact: bool = True) -> bool:
+        """找到按钮并用 CDP 派发真实鼠标事件。
+
+        注意：简历弹窗在 iframe 里，iframe 内元素的 rect 是"帧内坐标"，
+        必须加上 iframe 自身的偏移才是页面坐标，否则点击会打偏。
+        """
+        js = (
+            "(() => {"
+            " const T=TXT, C=CONT, EX=EXACT;"
+            " const docOf=(d)=>d;"
+            " const scan=(d, ox, oy) => {"
+            "   const W=(d.defaultView||window);"
+            "   for (const e of d.querySelectorAll('a,button,span,div')) {"
+            "     const t=(e.textContent||'').trim();"
+            "     if (EX ? t!==T : t.indexOf(T)<0) continue;"
+            "     const r=e.getBoundingClientRect();"
+            "     if (!(r.width>10 && r.height>10)) continue;"
+            "     if (!(r.top>=-4 && r.bottom<=W.innerHeight+4 && r.left>=-4 && r.right<=W.innerWidth+4)) continue;"
+            "     if (C) { let n=e, ok=false; while(n){ if(((n.className||'')+'').indexOf(C)>=0){ok=true;break;} n=n.parentElement; } if(!ok) continue; }"
+            "     return {x:Math.round(r.x+r.width/2+ox), y:Math.round(r.y+r.height/2+oy),"
+            "       tag:e.tagName, cls:(e.className||'').toString().slice(0,30)};"
+            "   }"
+            "   return null;"
+            " };"
+            " let hit = scan(document, 0, 0);"
+            " if (!hit) {"
+            "   for (const f of document.querySelectorAll('iframe')) {"
+            "     try {"
+            "       const fr=f.getBoundingClientRect();"
+            "       const d=f.contentDocument; if(!d) continue;"
+            "       hit = scan(d, fr.left, fr.top);"
+            "       if (hit) break;"
+            "     } catch(e) {}"
+            "   }"
+            " }"
+            " return hit ? JSON.stringify(hit) : ''; })()"
+        ).replace("TXT", json.dumps(text)).replace("CONT", json.dumps(container or "")).replace("EXACT", "true" if exact else "false")
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        info = res["result"].get("value") or ""
+        if not info:
+            return False
+        try:
+            box = json.loads(info)
+        except Exception:
+            return False
+        cx, cy = float(box["x"]), float(box["y"])
+        base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "buttons": 1}
+        self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy, "button": "none", "buttons": 0})
+        self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
+        self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
+        self.last_click = box
+        return True
+
+    def greet_button_text(self) -> str:
+        """返回弹窗里「打招呼/继续沟通」按钮当前的文字（找不到返回空串）。"""
+        js = (
+            "(() => {"
+            " const out=[];"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " for (const d of docs) {"
+            "   const W=(d.defaultView||window);"
+            "   for (const e of d.querySelectorAll('button,a')) {"
+            "     const t=(e.textContent||'').trim();"
+            "     if (t!=='打招呼' && t!=='继续沟通') continue;"
+            "     const r=e.getBoundingClientRect();"
+            "     if (!(r.width>10 && r.height>10)) continue;"
+            "     if (!(r.top>=-4 && r.bottom<=W.innerHeight+4)) continue;"
+            "     let n=e, inC=false;"
+            "     while(n){ if(((n.className||'')+'').indexOf('resumeGreet')>=0){inC=true;break;} n=n.parentElement; }"
+            "     if (inC) return t;"
+            "   }"
+            " }"
+            " return ''; })()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return str(res["result"].get("value") or "")
+
+    def click_element(self, text: str, container: str = "", exact: bool = True) -> bool:
         """找到按钮的 CSS 坐标，用 CDP 派发真实鼠标事件（JS click 有些站不认）。"""
         js = (
             "(() => {"
