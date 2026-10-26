@@ -98,32 +98,6 @@ class _WS:
             data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
         return data.decode(errors="replace")
 
-    def scroll_js(self, delta_y: int) -> int:
-        """用 JS 直接滚页面（含 iframe 里的推荐列表），完全不产生鼠标事件。
-
-        BOSS 的推荐列表是虚拟滚动且位于 iframe 中，鼠标滚轮事件不可靠；
-        直接设置 scrollingElement.scrollTop 最稳。
-        """
-        expr = (
-            "(() => { const f=document.querySelector('iframe');"
-            " const d=(f&&f.contentDocument)||document;"
-            " const el=d.scrollingElement||d.documentElement;"
-            f" el.scrollTop += ({int(delta_y)});"
-            " return Math.round(el.scrollTop); })()"
-        )
-        res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
-        return int(res["result"].get("value") or 0)
-
-    def scroll_top(self) -> int:
-        expr = (
-            "(() => { const f=document.querySelector('iframe');"
-            " const d=(f&&f.contentDocument)||document;"
-            " const el=d.scrollingElement||d.documentElement;"
-            " return Math.round(el.scrollTop||0); })()"
-        )
-        res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
-        return int(res["result"].get("value") or 0)
-
     def close(self) -> None:
         try:
             self.sock.close()
@@ -221,6 +195,32 @@ class CDP:
         self._send("Input.dispatchMouseEvent",
                    {"type": "mouseWheel", "x": cx, "y": cy,
                     "deltaX": 0, "deltaY": delta_y})
+
+    def scroll_js(self, delta_y: int) -> int:
+        """用 JS 直接滚页面（含 iframe 里的推荐列表），完全不产生鼠标事件。
+
+        BOSS 的推荐列表是虚拟滚动且位于 iframe 中，鼠标滚轮事件不可靠；
+        直接设置 scrollingElement.scrollTop 最稳。
+        """
+        expr = (
+            "(() => { const f=document.querySelector('iframe');"
+            " const d=(f&&f.contentDocument)||document;"
+            " const el=d.scrollingElement||d.documentElement;"
+            f" el.scrollTop += ({int(delta_y)});"
+            " return Math.round(el.scrollTop); })()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
+        return int(res["result"].get("value") or 0)
+
+    def scroll_top(self) -> int:
+        expr = (
+            "(() => { const f=document.querySelector('iframe');"
+            " const d=(f&&f.contentDocument)||document;"
+            " const el=d.scrollingElement||d.documentElement;"
+            " return Math.round(el.scrollTop||0); })()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
+        return int(res["result"].get("value") or 0)
 
     def close(self) -> None:
         self.ws.close()
