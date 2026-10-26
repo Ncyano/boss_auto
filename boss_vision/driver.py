@@ -788,21 +788,40 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     )
 
                 fingerprint = _fp(record)
-                if any(fingerprint) and fingerprint[0]:
-                    if fingerprint in _seen_people:
-                        # 同一人：先关掉弹窗（否则下一轮会卡在简历页），再跳过
-                        print(f"     ↺ {record.get('name')} 与之前重复"
-                              f"（{fingerprint[1] or '无学校'}），关闭弹窗后跳过")
-                        duplicate_skipped += 1
-                        try:
-                            if close_modal(rect, (ox, oy), p["wides"], icon_check=icon_check):
-                                modal_open[0] = False
-                            else:
-                                print("     关不掉弹窗，停止。")
-                                return 3
-                        except Exception as exc:
-                            print(f"     [warn] 关闭弹窗失败：{exc}")
-                        continue
+
+                def _similar(a: str, b: str) -> bool:
+                    """姓名差一个字、学校/公司相同也算同一人。"""
+                    if not a or not b:
+                        return a == b
+                    if a == b:
+                        return True
+                    if abs(len(a) - len(b)) > 1:
+                        return False
+                    import difflib as _dl
+                    return _dl.SequenceMatcher(None, a, b).ratio() >= 0.66
+
+                _dup_of = None
+                for _old in _seen_people:
+                    if _similar(fingerprint[0], _old[0]) and (
+                            fingerprint[1] == _old[1] or fingerprint[2] == _old[2]):
+                        _dup_of = _old
+                        break
+
+                if _dup_of is not None:
+                    # 同一人：先关掉弹窗（否则下一轮会卡在简历页），再跳过
+                    print(f"     ↺ {record.get('name')} 与之前重复"
+                          f"（{fingerprint[1] or '无学校'}），关闭弹窗后跳过")
+                    duplicate_skipped += 1
+                    try:
+                        if close_modal(rect, (ox, oy), p["wides"], icon_check=icon_check):
+                            modal_open[0] = False
+                        else:
+                            print("     关不掉弹窗，停止。")
+                            return 3
+                    except Exception as exc:
+                        print(f"     [warn] 关闭弹窗失败：{exc}")
+                    continue
+                if any(fingerprint):
                     _seen_people.add(fingerprint)
             except Exception as exc:
                 print(f"     [warn] 去重检查失败：{exc}")
