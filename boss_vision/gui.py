@@ -105,7 +105,7 @@ class App:
         status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
         add_row(1, "打招呼目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
-                "（只有成功打开简历的才算一次）")
+                "（只有打招呼成功的才算一次）")
 
         gap_row = ttk.Frame(top)
         ttk.Label(gap_row, text="间隔秒数").pack(side="left")
@@ -173,7 +173,14 @@ class App:
             self.append(chunk)
 
         p = driver.PROGRESS
-        target = max(1, p.get("target") or 1)
+        running = p.get("state") == "running"
+        if running:
+            target = max(1, p.get("target") or 1)
+        else:
+            try:
+                target = max(1, int(self.var_limit.get()))
+            except Exception:
+                target = max(1, p.get("target") or 1)
         done = p.get("valid", 0)
         self.bar["value"] = min(100, done * 100 / target)
         state_map = {"idle": "空闲", "running": "运行中", "done": "已完成", "stopped": "已停止"}
