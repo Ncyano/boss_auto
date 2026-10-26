@@ -185,11 +185,27 @@ def main() -> int:
         full_text = (r.get("工作经历全文") or "").strip()
 
         def _duties_of(company: str, period: str) -> list[str]:
-            """从全文里按公司名切出这一段，切到了才算有职责。"""
+            """按「公司 + 起止时间」一起定位这一段；只有公司名相同不算。"""
             if not full_text or not company:
                 return []
             lines_all = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
-            idx = next((i for i, ln in enumerate(lines_all) if company in ln), -1)
+            per = (period or "").replace(" ", "")
+
+            def _hit(line: str) -> bool:
+                if company not in line:
+                    return False
+                if not per:
+                    return True
+                start = per.split("-")[0] if "-" in per else per
+                return start in line.replace(" ", "")
+
+            idx = next((i for i, ln in enumerate(lines_all) if _hit(ln)), -1)
+            if idx < 0:
+                # 时间对不上：只有在全文里该公司只出现一次时才退化为按公司找
+                occur = [i for i, ln in enumerate(lines_all) if company in ln]
+                if len(occur) != 1:
+                    return []
+                idx = occur[0]
             if idx < 0:
                 return []
             body: list[str] = []

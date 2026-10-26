@@ -900,12 +900,15 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             if verdict.get("verdict") == "合适":
                 print(f"     [打招呼检查] live={live} modal_open={modal_open[0]} "
                       f"status={status}")
-            if verdict.get("verdict") == "合适" and status == "正常" and live:
+            if verdict.get("verdict") == "合适" and status == "正常" and live and not STOP:
                 try:
                     if modal_open[0]:
                         print("     判定合适 -> 点「打招呼」")
                         ok = False
                         for attempt in range(2):
+                            if STOP:
+                                print("     收到停止指令，不再发送打招呼")
+                                break
                             if winenv.greet():
                                 ok = True
                                 break

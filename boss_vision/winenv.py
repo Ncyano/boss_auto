@@ -400,11 +400,10 @@ def greet() -> bool:
 
     for attempt in range(2):
         try:
+            # 只认简历弹窗里的按钮：绝不退到全页面，否则可能点到背景列表里的别人
             ok = cli.click_element("打招呼", container="resumeGreet")
             if not ok:
-                ok = cli.click_element("打招呼")
-            if not ok:
-                print("     [warn] 没找到可点的「打招呼」按钮")
+                print("     [warn] 弹窗里没找到「打招呼」按钮，本次不发送（避免误点他人）")
                 return False
             time.sleep(1.2)
             txt = cli.greet_button_text()
