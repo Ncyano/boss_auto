@@ -366,6 +366,25 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
     return ok, msg
 
 
+def scroll_modal(clicks: int = -3) -> None:
+    """滚简历弹窗（找最长的可滚动容器），完全不用坐标和鼠标。"""
+    if _cdp_mode() and _CDP_SCROLL_OK[0]:
+        try:
+            moved = _cdp_client().scroll_modal(-clicks * 120)
+            if moved:
+                return
+        except Exception:
+            reset_cdp()
+    # 兜底：真实滚轮（坐标取屏幕中心）
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        cx = u.GetSystemMetrics(0) // 2
+        cy = u.GetSystemMetrics(1) // 2
+        scroll(cx, cy, clicks)
+    except Exception:
+        pass
+
 def scroll_at(x: int, y: int, clicks: int = -3) -> None:
     """在 (x, y) 处滚动"该位置的容器"（简历弹窗/列表都能用），不移动鼠标。"""
     if _cdp_mode() and _CDP_SCROLL_OK[0]:

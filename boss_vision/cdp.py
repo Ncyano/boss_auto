@@ -210,6 +210,36 @@ class CDP:
                    {"type": "mouseWheel", "x": cx, "y": cy,
                     "deltaX": 0, "deltaY": delta_y})
 
+    def scroll_modal(self, delta_y: int) -> int:
+        """滚简历弹窗：不依赖坐标，直接找顶层文档里"内容最长的可滚动容器"。
+
+        换机/换分辨率后坐标可能偏，这种找法不受影响。
+        """
+        js = (
+            "(() => {"
+            " const els=[...document.querySelectorAll('div,section,main')].filter(e=>{"
+            "   const cs=getComputedStyle(e);"
+            "   return (cs.overflowY==='auto'||cs.overflowY==='scroll')"
+            "     && e.scrollHeight > e.clientHeight + 100"
+            "     && e.clientHeight > 300"
+            "     && e.getBoundingClientRect().width > 400; });"
+            " if(!els.length) return JSON.stringify({moved:0,n:0});"
+            " els.sort((a,b)=>b.scrollHeight-a.scrollHeight);"
+            " const t=els[0], b=t.scrollTop;"
+            " t.scrollTop += DY;"
+            " return JSON.stringify({moved:Math.round(t.scrollTop-b), n:els.length,"
+            "   top:Math.round(t.scrollTop), sh:t.scrollHeight, ch:t.clientHeight,"
+            "   cls:(t.className||'').toString().slice(0,50)});"
+            "})()"
+        ).replace("DY", str(int(delta_y)))
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        try:
+            info = json.loads(res["result"].get("value") or "{}")
+        except Exception:
+            return 0
+        self.last_scroll = info
+        return int(info.get("moved") or 0)
+
     def scroll_at(self, x: int, y: int, delta_y: int) -> int:
         """滚"坐标所在的那个滚动容器"，返回滚动后的 scrollTop。
 
