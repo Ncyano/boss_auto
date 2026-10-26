@@ -197,33 +197,50 @@ class CDP:
                     "deltaX": 0, "deltaY": delta_y})
 
     def scroll_at(self, x: int, y: int, delta_y: int) -> int:
-        """滚"坐标下方那个可滚动元素"（列表 iframe / 简历弹窗都能用）。"""
+        """滚"坐标所在的那个滚动容器"，返回滚动后的 scrollTop。
+
+        三级兜底（BOSS 弹窗结构不固定，单靠 elementFromPoint 常找不到）：
+          1. elementFromPoint 后往上找可滚动祖先
+          2. 遍历所有滚动容器，选"包含该坐标且内容最长"的
+          3. 在点位上派发 DOM WheelEvent（触发 React 的滚动处理）
+        """
         cx, cy = self._to_css(x, y)
         js = (
             "(() => {"
-            " let el = document.elementFromPoint(CX, CY);"
-            " let doc = document;"
-            " if (el && el.tagName === 'IFRAME') {"
-            "   try { const d = el.contentDocument;"
-            "     el = d.elementFromPoint(CX, CY) || d.body; doc = d; } catch (e) {} }"
-            " while (el) {"
-            "   const cs = getComputedStyle(el);"
-            "   const oy = cs.overflowY;"
-            "   if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 10) {"
-            "     el.scrollTop += D;"
-            "     return Math.round(el.scrollTop);"
-            "   }"
-            "   el = el.parentElement;"
-            " }"
-            " const se = doc.scrollingElement || doc.documentElement;"
-            " se.scrollTop += D;"
-            " return Math.round(se.scrollTop);"
+            " const PX=__CX__, PY=__CY__, DY=__D__;"
+            " const scrollIt=(el)=>{ const b=el.scrollTop; el.scrollTop += DY;"
+            "   return Math.round(el.scrollTop - b); };"
+            " const ok=(el)=>{ if(!el) return false; const cs=getComputedStyle(el);"
+            "   return (cs.overflowY==='auto'||cs.overflowY==='scroll')"
+            "     && el.scrollHeight > el.clientHeight + 10; };"
+            " let doc=document, el=document.elementFromPoint(PX,PY);"
+            " if (el && el.tagName==='IFRAME') { try { const d=el.contentDocument;"
+            "   doc=d; el=d.elementFromPoint(PX,PY)||d.body; } catch(e){} }"
+            " let node=el;"
+            " while (node) { if (ok(node)) { const m=scrollIt(node);"
+            "   if (m) return JSON.stringify({moved:m, by:'ancestor', top:Math.round(node.scrollTop)}); }"
+            "   node=node.parentElement; }"
+            " const cands=[...doc.querySelectorAll('*')].filter(e=>{"
+            "   if(!ok(e)) return false; const r=e.getBoundingClientRect();"
+            "   return r.left<=PX && PX<=r.right && r.top<=PY && PY<=r.bottom; });"
+            " for (const t of cands.sort((a,b)=>b.scrollHeight-a.scrollHeight)) {"
+            "   const m=scrollIt(t);"
+            "   if (m) return JSON.stringify({moved:m, by:'query', top:Math.round(t.scrollTop)}); }"
+            " const tgt=el||doc.body;"
+            " tgt.dispatchEvent(new WheelEvent('wheel',{deltaY:DY,clientX:PX,clientY:PY,bubbles:true,cancelable:true}));"
+            " return JSON.stringify({moved:0, by:'wheelEvent', top:0});"
             "})()"
-        ).replace("CX", str(int(cx))).replace("CY", str(int(cy))).replace("D", str(int(delta_y)))
+        ).replace("__CX__", str(int(cx))).replace("__CY__", str(int(cy)))
+        js = js.replace("__D__", str(int(delta_y)))
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
         if res.get("exceptionDetails"):
             raise RuntimeError(str(res["exceptionDetails"].get("text")))
-        return int(res["result"].get("value") or 0)
+        try:
+            info = json.loads(res["result"].get("value") or "{}")
+        except Exception:
+            return 0
+        self.last_scroll = info
+        return int(info.get("moved") or 0)
 
     def scroll_js(self, delta_y: int) -> int:
         """用 JS 直接滚页面（含 iframe 里的推荐列表），完全不产生鼠标事件。
