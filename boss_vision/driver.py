@@ -911,7 +911,6 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 except Exception as exc:
                     print(f"     [warn] 打招呼失败：{exc}")
 
-            record["gap_before_next"] = round(gap, 1)
             if opened and not close_modal(
                 rect, (ox, oy), plan(winenv.grab_window(rect), icon_check)["wides"],
                 icon_check=icon_check,
@@ -935,6 +934,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             gap = 0.0
             if not reached():
                 gap = wait_between_candidates(min_gap, max_gap)
+            record["gap_before_next"] = round(gap, 1)
 
             results.append(record)
             last_record_at[:] = [time.time()]
