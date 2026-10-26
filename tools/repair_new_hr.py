@@ -204,7 +204,7 @@ def main() -> int:
                 # 目标经历有明确时间，全文里却没有对应条目 -> 视为时间冲突，不取别段的职责
                 return []
             if idx < 0:
-                # 目标时间缺失：只有该公司在全文唯一出现时才谨慎补齐
+                # 目标时间缺失：先确认该公司在全文只出现一次，避免取到同公司另一段的职责
                 occur = [i for i, ln in enumerate(lines_all) if company in ln]
                 if len(occur) != 1:
                     return []

@@ -294,7 +294,8 @@ class CDP:
             " cands.sort((a,b)=>b.scrollHeight-a.scrollHeight);"
             " const t=cands[0];"
             " const before=t.scrollTop;"
-            " if (ACT==='top') t.scrollTop=0;"
+            " if (ACT==='get') { /* 只读，不改位置 */ }"
+            " else if (ACT==='top') t.scrollTop=0;"
             " else if (ACT==='bottom') t.scrollTop=t.scrollHeight;"
             " else t.scrollTop=before+DY;"
             " return JSON.stringify({ok:true, n:cands.length,"
@@ -315,7 +316,8 @@ class CDP:
         return int(info.get("moved") or 0)
 
     def modal_scroll_top(self) -> int:
-        info = self._modal_js("top")
+        """只读取当前 scrollTop，不改变滚动位置。"""
+        info = self._modal_js("get")
         return int(info.get("top", -1))
 
     def scroll_modal_top(self) -> int:

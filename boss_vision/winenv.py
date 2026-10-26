@@ -503,10 +503,14 @@ def greet(should_stop=None) -> bool:
                 print("     [warn] 弹窗里没找到「打招呼」按钮，本次不发送（避免误点他人）")
                 return False
             time.sleep(1.2)
+            txt = cli.greet_button_text()
             if _cancelled():
+                # 停止发生在等待期间：先看这次是否已经发送成功，成功就照实记
+                if txt == "继续沟通":
+                    print("     [校验] 弹窗按钮现在是：继续沟通（停止前已发送成功）")
+                    return True
                 print("     收到停止指令，不再重试")
                 return False
-            txt = cli.greet_button_text()
             print(f"     [校验] 弹窗按钮现在是：{txt or '(空)'}")
             if txt == "继续沟通":
                 return True
