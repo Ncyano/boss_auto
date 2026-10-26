@@ -131,6 +131,8 @@ def main() -> int:
         winenv.grab_window = fake_grab
         winenv.scroll = fake_scroll
         winenv.scroll_at = lambda x, y, c=0: fake_scroll(x, y, c)
+        winenv.scroll_modal = lambda *a, **k: fake_scroll(0, 0, 0)
+        winenv.scroll_modal_top = lambda *a, **k: fake_scroll(0, 0, 0)
         resume_reader.time.sleep = lambda s: None
         Handler.call = 0
         rr = resume_reader.read_resume_vlm((0, 0, 2560, 1400), vision.Rect(1609, 252, 285, 40),
