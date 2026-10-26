@@ -117,11 +117,13 @@ def test_education_continue() -> None:
         Handler.call = 0
         winenv.grab_window = lambda rect: frames[min(state["i"], len(frames) - 1)]
         winenv.scroll = lambda x, y, c=0: state.update(i=min(state["i"] + 1, len(frames) - 1))
+        winenv.scroll_at = winenv.scroll
         resume_reader.time.sleep = lambda s: None
         rr = resume_reader.read_resume_vlm((0, 0, 2560, 1400), vision.Rect(1609, 252, 285, 40),
                                            log=lambda *_: None, max_steps=6, cfg=cfg)
     finally:
         winenv.grab_window, winenv.scroll = real_grab, real_scroll
+        winenv.scroll_at = winenv.scroll
         resume_reader.time.sleep = real_sleep
         server.shutdown()
 
