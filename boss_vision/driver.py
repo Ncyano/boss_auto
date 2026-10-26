@@ -912,6 +912,21 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             print(f"     ➜ 判定：{verdict['verdict']}"
                   f"（{verdict['stage']}层{flag}｜{verdict['reason'][:60]}）")
 
+            # 合适 -> 点「打招呼」（页面内点击，不移动鼠标）
+            record["greeted"] = False
+            if verdict.get("verdict") == "合适" and status == "正常" and live:
+                try:
+                    if modal_open[0]:
+                        print("     判定合适 -> 点「打招呼」")
+                        if winenv.greet():
+                            record["greeted"] = True
+                            print("     已发送打招呼")
+                        else:
+                            print("     [warn] 没找到「打招呼」按钮，跳过")
+                        time.sleep(1.2)
+                except Exception as exc:
+                    print(f"     [warn] 打招呼失败：{exc}")
+
             record["gap_before_next"] = round(gap, 1)
             results.append(record)
             last_record_at[:] = [time.time()]

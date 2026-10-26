@@ -383,6 +383,16 @@ def raw_wheel(x: int, y: int, clicks: int = -3) -> None:
     finally:
         u.SetCursorPos(old[0], old[1])
 
+def greet() -> bool:
+    """点「打招呼」（页面内 click，不移动鼠标）。成功返回 True。"""
+    if _cdp_mode():
+        try:
+            if _cdp_client().click_text("打招呼"):
+                return True
+        except Exception:
+            reset_cdp()
+    return False
+
 def press_escape() -> bool:
     """页面内派发 Esc 关弹窗（CDP）；失败再用真实键盘。"""
     if _cdp_mode():

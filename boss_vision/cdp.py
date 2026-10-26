@@ -372,6 +372,27 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         return int(res["result"].get("value") or 0)
 
+    def click_text(self, text: str, exact: bool = True) -> bool:
+        """在页面里找文字等于/包含 text 的可点击元素并 click()。"""
+        js = (
+            "(() => {"
+            " const T=TXT, EX=EXACT;"
+            " const els=[...document.querySelectorAll('a,button,span,div')];"
+            " const hit=els.find(e=>{"
+            "   const t=(e.textContent||'').trim();"
+            "   if (EX ? t!==T : t.indexOf(T)<0) return false;"
+            "   const r=e.getBoundingClientRect();"
+            "   if (!(r.width>10 && r.height>10)) return false;"
+            "   const cs=getComputedStyle(e);"
+            "   return cs.visibility!=='hidden' && cs.display!=='none';"
+            " });"
+            " if(!hit) return false;"
+            " hit.click(); return true;"
+            "})()"
+        ).replace("TXT", json.dumps(text)).replace("EXACT", "true" if exact else "false")
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return bool(res["result"].get("value"))
+
     def press_escape(self) -> None:
         """向页面派发 Esc（关闭弹窗最可靠的方式，不需要窗口焦点）。"""
         for kind in ("rawKeyDown", "keyUp"):
