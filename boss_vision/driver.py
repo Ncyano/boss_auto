@@ -564,6 +564,21 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         if dup:
             print(f"  {dup} 张是已处理过的候选人 -> 跳过")
 
+        if picked is None and p.get("cards") and icon_check and len(p["cards"]) >= 3                 and not p.get("todo"):
+            # 整屏 7 张全被判"已沟通"不合理：多半是图标模板在当前缩放下失效
+            print("  [warn] 整屏卡片都被判为已沟通（疑似图标模板失配），本次改用文字淡化判据")
+            p = plan(img, False)
+            sigs = p.get("sigs") or [0] * len(p["cards"])
+            order = sorted(range(len(p["todo"])),
+                           key=lambda k: p["cards"][p["todo"][k]].y)
+            for k in order:
+                idx = p["todo"][k]
+                if sigs[idx] and sigs[idx] in seen_sigs:
+                    continue
+                picked = (idx, p["click"][k])
+                break
+            icon_check = False        # 本轮后面也用淡化判据
+
         if picked is None:
             no_progress += 1
             if no_progress == 10:
