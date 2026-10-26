@@ -229,6 +229,19 @@ def close_modal(rect: tuple[int, int, int, int], origin: tuple[int, int],
                 cx, cy = int(rect[2] * 0.15), int(rect[3] * 0.5)
                 print(f"     关闭弹窗：点遮罩 ({cx},{cy})")
                 winenv.click(ox + cx, oy + cy)
+            elif i == tries + 2:
+                print("     关闭弹窗：刷新页面（最后手段）")
+                try:
+                    import cdp as _cdp
+                    if _cdp.available():
+                        c = _cdp.CDP()
+                        c._call("Page.reload")
+                        c.close()
+                        time.sleep(5.0)
+                        if plan(winenv.grab_window(rect), icon_check)["state"] != "resume_modal":
+                            return True
+                except Exception as exc:
+                    print(f"     刷新失败：{exc}")
             else:
                 print("     关闭弹窗：Esc")
                 winenv.press_escape()
@@ -568,6 +581,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 scrolls += 1
                 cap = "不限" if max_scrolls is None else max_scrolls
                 print(f"  本屏没有可点的新卡片 -> 向下滚一屏（{scrolls}/{cap}）")
+                last_click_y = -9999        # 换了新一屏，从头按 y 顺序选
                 if not live:
                     print(f"  dry-run：不动作。标注图 {annotate(img, p)}")
                     return 0
