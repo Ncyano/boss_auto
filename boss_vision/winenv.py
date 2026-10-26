@@ -383,11 +383,19 @@ def raw_wheel(x: int, y: int, clicks: int = -3) -> None:
     finally:
         u.SetCursorPos(old[0], old[1])
 
-def greet() -> bool:
-    """点「打招呼」：只用 CDP 真实鼠标事件（JS click 实测无效）。
+def greet(should_stop=None) -> bool:
+    """点「打招呼」：只认简历弹窗里的按钮，只有一层重试。
 
+    should_stop: 可选回调，返回 True 表示用户已点停止 —— 每次派发点击前都会检查，
+    停止后不再派发下一次（已派发的点击无法撤回）。
     返回 True 表示按钮已变成「继续沟通」。
     """
+    def _cancelled() -> bool:
+        try:
+            return bool(should_stop and should_stop())
+        except Exception:
+            return False
+
     if not _cdp_mode():
         print("     [warn] 不在 CDP 模式，无法点打招呼")
         return False
@@ -399,17 +407,25 @@ def greet() -> bool:
         return False
 
     for attempt in range(2):
+        if _cancelled():
+            print("     收到停止指令，不再发送打招呼")
+            return False
         try:
-            # 只认简历弹窗里的按钮：绝不退到全页面，否则可能点到背景列表里的别人
             ok = cli.click_element("打招呼", container="resumeGreet")
             if not ok:
                 print("     [warn] 弹窗里没找到「打招呼」按钮，本次不发送（避免误点他人）")
                 return False
             time.sleep(1.2)
+            if _cancelled():
+                print("     收到停止指令，不再重试")
+                return False
             txt = cli.greet_button_text()
             print(f"     [校验] 弹窗按钮现在是：{txt or '(空)'}")
             if txt == "继续沟通":
                 return True
+            if attempt == 0:
+                print("     第 1 次未成功，重试")
+                time.sleep(0.8)
         except Exception as exc:
             print(f"     [warn] 打招呼异常：{exc}")
             reset_cdp()

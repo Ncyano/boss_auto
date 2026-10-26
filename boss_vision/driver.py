@@ -904,16 +904,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 try:
                     if modal_open[0]:
                         print("     判定合适 -> 点「打招呼」")
-                        ok = False
-                        for attempt in range(2):
-                            if STOP:
-                                print("     收到停止指令，不再发送打招呼")
-                                break
-                            if winenv.greet():
-                                ok = True
-                                break
-                            print(f"     第 {attempt + 1} 次未成功，重试")
-                            time.sleep(0.8)
+                        ok = winenv.greet(should_stop=lambda: STOP)
                         record["greeted"] = ok
                         print("     已发送打招呼（按钮已变为继续沟通）" if ok
                               else "     [warn] 打招呼未成功")

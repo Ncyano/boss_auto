@@ -200,8 +200,11 @@ def main() -> int:
                 return start in line.replace(" ", "")
 
             idx = next((i for i, ln in enumerate(lines_all) if _hit(ln)), -1)
+            if idx < 0 and per:
+                # 目标经历有明确时间，全文里却没有对应条目 -> 视为时间冲突，不取别段的职责
+                return []
             if idx < 0:
-                # 时间对不上：只有在全文里该公司只出现一次时才退化为按公司找
+                # 目标时间缺失：只有该公司在全文唯一出现时才谨慎补齐
                 occur = [i for i, ln in enumerate(lines_all) if company in ln]
                 if len(occur) != 1:
                     return []
