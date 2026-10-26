@@ -223,7 +223,9 @@ class CDP:
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", **base,
                                                 "button": "none", "buttons": 0})
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
+        time.sleep(0.08)
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
+        time.sleep(0.08)
 
     def wheel(self, x: int, y: int, delta_y: int) -> None:
         """delta_y 为负 = 向下滚（和 Windows 滚轮方向一致）。"""
@@ -447,8 +449,11 @@ class CDP:
         base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "buttons": 1}
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy, "button": "none", "buttons": 0})
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
+        time.sleep(0.08)
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
+        time.sleep(0.08)
         self.last_click = box
+        print(f"     [点击] ({int(cx)},{int(cy)}) {box.get('tag')}.{box.get('cls')}")
         return True
 
     def greet_button_text(self) -> str:
@@ -513,8 +518,11 @@ class CDP:
         base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "buttons": 1}
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy, "button": "none", "buttons": 0})
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
+        time.sleep(0.08)
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
+        time.sleep(0.08)
         self.last_click = box
+        print(f"     [点击] ({int(cx)},{int(cy)}) {box.get('tag')}.{box.get('cls')}")
         return True
 
     def click_text(self, text: str, exact: bool = True, container: str = "") -> bool:
