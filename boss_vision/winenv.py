@@ -384,26 +384,39 @@ def raw_wheel(x: int, y: int, clicks: int = -3) -> None:
         u.SetCursorPos(old[0], old[1])
 
 def greet() -> bool:
-    """点「打招呼」（页面内 click，不移动鼠标）。成功返回 True。"""
-    if _cdp_mode():
+    """点「打招呼」：只用 CDP 真实鼠标事件（JS click 实测无效）。
+
+    返回 True 表示按钮已变成「继续沟通」。
+    """
+    if not _cdp_mode():
+        print("     [warn] 不在 CDP 模式，无法点打招呼")
+        return False
+    try:
+        cli = _cdp_client()
+    except Exception as exc:
+        print(f"     [warn] CDP 连接失败：{exc}")
+        reset_cdp()
+        return False
+
+    for attempt in range(2):
         try:
-            cli = _cdp_client()
-            if cli.click_element("打招呼", container="resumeGreet") or \
-                    cli.click_text("打招呼", exact=True, container="resumeGreet"):
-                time.sleep(1.2)
-                txt = cli.greet_button_text()
-                print(f"     [校验] 弹窗按钮现在是：{txt or '(空)'}")
-                return txt == "继续沟通"
-            if cli.click_text("打招呼", exact=True):
+            ok = cli.click_element("打招呼", container="resumeGreet")
+            if not ok:
+                ok = cli.click_element("打招呼")
+            if not ok:
+                print("     [warn] 没找到可点的「打招呼」按钮")
+                return False
+            time.sleep(1.2)
+            txt = cli.greet_button_text()
+            print(f"     [校验] 弹窗按钮现在是：{txt or '(空)'}")
+            if txt == "继续沟通":
                 return True
-            if cli.click_text("打招呼", exact=False, container="resumeGreet"):
-                return True
-            cands = cli.find_text("招呼")
-            print(f"     [诊断] 含「招呼」的元素 {len(cands)} 个: {cands[:3]}")
         except Exception as exc:
             print(f"     [warn] 打招呼异常：{exc}")
             reset_cdp()
+            return False
     return False
+
 
 def press_escape() -> bool:
     """页面内派发 Esc 关弹窗（CDP）；失败再用真实键盘。"""
