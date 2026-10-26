@@ -390,14 +390,10 @@ def greet() -> bool:
             cli = _cdp_client()
             if cli.click_element("打招呼", container="resumeGreet") or \
                     cli.click_text("打招呼", exact=True, container="resumeGreet"):
-                time.sleep(1.0)
-                # 校验：打成功后 BOSS 会把按钮变成「继续沟通」
-                if cli.find_text("继续沟通") or cli.find_text("继续"):
-                    return True
-                # 再确认一次「打招呼」是否还在（还在说明没点成功）
-                if not cli.find_text("打招呼"):
-                    return True
-                return False
+                time.sleep(1.2)
+                txt = cli.greet_button_text()
+                print(f"     [校验] 弹窗按钮现在是：{txt or '(空)'}")
+                return txt == "继续沟通"
             if cli.click_text("打招呼", exact=True):
                 return True
             if cli.click_text("打招呼", exact=False, container="resumeGreet"):

@@ -372,6 +372,32 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         return int(res["result"].get("value") or 0)
 
+    def greet_button_text(self) -> str:
+        """返回弹窗里「打招呼/继续沟通」按钮当前的文字（找不到返回空串）。"""
+        js = (
+            "(() => {"
+            " const out=[];"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " for (const d of docs) {"
+            "   const W=(d.defaultView||window);"
+            "   for (const e of d.querySelectorAll('button,a')) {"
+            "     const t=(e.textContent||'').trim();"
+            "     if (t!=='打招呼' && t!=='继续沟通') continue;"
+            "     const r=e.getBoundingClientRect();"
+            "     if (!(r.width>10 && r.height>10)) continue;"
+            "     if (!(r.top>=-4 && r.bottom<=W.innerHeight+4)) continue;"
+            "     let n=e, inC=false;"
+            "     while(n){ if(((n.className||'')+'').indexOf('resumeGreet')>=0){inC=true;break;} n=n.parentElement; }"
+            "     if (inC) return t;"
+            "   }"
+            " }"
+            " return ''; })()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return str(res["result"].get("value") or "")
+
     def click_element(self, text: str, container: str = "", exact: bool = True) -> bool:
         """找到按钮的 CSS 坐标，用 CDP 派发真实鼠标事件（JS click 有些站不认）。"""
         js = (
