@@ -213,15 +213,24 @@ def close_modal(rect: tuple[int, int, int, int], origin: tuple[int, int],
     if wides:
         cands.append(vision.close_button(wides[0]))
     cands.append((int(rect[2] * 0.15), int(rect[3] * 0.5)))
-    for i in range(tries):
+    for i in range(tries + 2):
         try:
             if i < len(cands):
                 cx, cy = cands[i]
                 print(f"     关闭弹窗：点 ({cx},{cy})")
                 winenv.click(ox + cx, oy + cy)
+            elif i == len(cands):
+                # 页面内找关闭按钮直接 click()：不依赖坐标，窄屏也准
+                print("     关闭弹窗：JS 点关闭按钮")
+                if winenv.close_dialog_by_js():
+                    time.sleep(0.8)
+                    if plan(winenv.grab_window(rect), icon_check)["state"] != "resume_modal":
+                        return True
+                print("     关闭弹窗：页面内 Esc")
+                winenv.press_escape()
             else:
                 print("     关闭弹窗：Esc")
-                winenv.press_key(winenv.VK_ESCAPE)
+                winenv.press_escape()
             time.sleep(0.9)
             if plan(winenv.grab_window(rect), icon_check)["state"] != "resume_modal":
                 return True

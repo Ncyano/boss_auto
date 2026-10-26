@@ -98,6 +98,29 @@ class _WS:
             data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
         return data.decode(errors="replace")
 
+    def press_escape(self) -> None:
+        """向页面派发 Esc（关闭弹窗最可靠的方式，不需要窗口焦点）。"""
+        for kind in ("rawKeyDown", "keyUp"):
+            self._send("Input.dispatchKeyEvent", {
+                "type": kind, "key": "Escape", "code": "Escape",
+                "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27,
+            })
+
+    def close_dialog_by_js(self) -> bool:
+        """点弹窗上的关闭按钮（X）。找不到就返回 False。"""
+        js = (
+            "(() => {"
+            " const sels=['[class*=close]','[class*=Close]','.boss-dialog__close',"
+            "   '.dialog-close','i[class*=close]'];"
+            " for (const s of sels) {"
+            "   const el=document.querySelector(s);"
+            "   if (el) { const r=el.getBoundingClientRect();"
+            "     if (r.width>0 && r.height>0) { el.click(); return true; } } }"
+            " return false; })()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return bool(res["result"].get("value"))
+
     def close(self) -> None:
         try:
             self.sock.close()

@@ -366,6 +366,34 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
     return ok, msg
 
 
+def press_escape() -> bool:
+    """页面内派发 Esc 关弹窗（CDP）；失败再用真实键盘。"""
+    if _cdp_mode():
+        try:
+            _cdp_client().press_escape()
+            return True
+        except Exception:
+            reset_cdp()
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        VK_ESC = 0x1B
+        u.keybd_event(VK_ESC, 0, 0, 0)
+        time.sleep(0.05)
+        u.keybd_event(VK_ESC, 0, 2, 0)
+        return True
+    except Exception:
+        return False
+
+
+def close_dialog_by_js() -> bool:
+    if _cdp_mode():
+        try:
+            return _cdp_client().close_dialog_by_js()
+        except Exception:
+            reset_cdp()
+    return False
+
 def scroll_modal_top(x: int | None = None, y: int | None = None) -> bool:
     """把简历弹窗滚回顶部，并校验 scrollTop ≈ 0。"""
     if _cdp_mode():
