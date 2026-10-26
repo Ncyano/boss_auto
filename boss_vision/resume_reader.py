@@ -1337,10 +1337,18 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     if not res.education:
         try:
             log("  没读到教育经历，滚到页面底部再读一屏")
-            for _ in range(10):
-                band_r = panel_band(winenv.grab_window(rect), wide)
-                winenv.scroll_modal(-4, rect[0] + band_r.x + band_r.w // 2, rect[1] + band_r.y + band_r.h // 2)
-                time.sleep(0.25)
+            # 直接设 scrollTop = scrollHeight，一次到底（原来滚 10 次，慢且后台模式下滚不动）
+            try:
+                import cdp as _cdpm
+                if _cdpm.available():
+                    _c = _cdpm.CDP()
+                    _c.scroll_modal_bottom()
+                    _c.close()
+                else:
+                    winenv.scroll_modal(-8)
+            except Exception:
+                winenv.scroll_modal(-8)
+            time.sleep(0.6)
             img_b = winenv.grab_window(rect)
             band_b = panel_band(img_b, wide)
             crop_b = img_b[band_b.y: band_b.y + band_b.h, band_b.x: band_b.x + band_b.w]

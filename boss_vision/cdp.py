@@ -268,33 +268,63 @@ class CDP:
         val = res["result"].get("value")
         return -1 if val is None else int(val)
 
-    def scroll_modal(self, delta_y: int) -> int:
-        """滚简历弹窗：不依赖坐标，直接找顶层文档里"内容最长的可滚动容器"。
+    def _modal_js(self, action: str, delta_y: int = 0) -> dict:
+        """在顶层文档 + 同源 iframe 里找简历弹窗的可滚动容器并操作。
 
-        换机/换分辨率后坐标可能偏，这种找法不受影响。
+        action: "by"（相对滚动 delta_y）/ "top"（回到顶部）/ "bottom"（滚到底）
+        返回 {ok, moved, top, n}
         """
         js = (
             "(() => {"
-            " const els=[...document.querySelectorAll('div,section,main')].filter(e=>{"
-            "   const cs=getComputedStyle(e);"
-            "   return (cs.overflowY==='auto'||cs.overflowY==='scroll')"
-            "     && e.scrollHeight > e.clientHeight + 100"
-            "     && e.clientHeight > 300"
-            "     && e.getBoundingClientRect().width > 400; });"
-            " if(!els.length) return JSON.stringify({moved:0,n:0});"
-            " els.sort((a,b)=>b.scrollHeight-a.scrollHeight);"
-            " const t=els[0], b=t.scrollTop;"
-            " t.scrollTop += DY;"
-            " return JSON.stringify({moved:Math.round(t.scrollTop-b), n:els.length,"
-            "   top:Math.round(t.scrollTop), sh:t.scrollHeight, ch:t.clientHeight,"
-            "   cls:(t.className||'').toString().slice(0,50)});"
+            " const ACT=ACT_V, DY=DY_V;"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " const cands=[];"
+            " for (const d of docs) {"
+            "   for (const e of d.querySelectorAll('div,section,main')) {"
+            "     const cs=(d.defaultView||window).getComputedStyle(e);"
+            "     if (cs.overflowY!=='auto' && cs.overflowY!=='scroll') continue;"
+            "     if (e.scrollHeight <= e.clientHeight + 100) continue;"
+            "     if (e.clientHeight < 300) continue;"
+            "     cands.push(e);"
+            "   }"
+            " }"
+            " if (!cands.length) return JSON.stringify({ok:false, n:0, moved:0, top:-1});"
+            " cands.sort((a,b)=>b.scrollHeight-a.scrollHeight);"
+            " const t=cands[0];"
+            " const before=t.scrollTop;"
+            " if (ACT==='top') t.scrollTop=0;"
+            " else if (ACT==='bottom') t.scrollTop=t.scrollHeight;"
+            " else t.scrollTop=before+DY;"
+            " return JSON.stringify({ok:true, n:cands.length,"
+            "   moved:Math.round(t.scrollTop-before), top:Math.round(t.scrollTop),"
+            "   sh:t.scrollHeight, ch:t.clientHeight,"
+            "   cls:(t.className||'').toString().slice(0,40)});"
             "})()"
-        ).replace("DY", str(int(delta_y)))
+        ).replace("ACT_V", json.dumps(action)).replace("DY_V", str(int(delta_y)))
         res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
         try:
-            info = json.loads(res["result"].get("value") or "{}")
+            return json.loads(res["result"].get("value") or "{}")
         except Exception:
-            return 0
+            return {}
+
+    def scroll_modal(self, delta_y: int) -> int:
+        info = self._modal_js("by", delta_y)
+        self.last_scroll = info
+        return int(info.get("moved") or 0)
+
+    def modal_scroll_top(self) -> int:
+        info = self._modal_js("top")
+        return int(info.get("top", -1))
+
+    def scroll_modal_top(self) -> int:
+        info = self._modal_js("top")
+        self.last_scroll = info
+        return int(info.get("top", -1))
+
+    def scroll_modal_bottom(self) -> int:
+        info = self._modal_js("bottom")
         self.last_scroll = info
         return int(info.get("moved") or 0)
 
