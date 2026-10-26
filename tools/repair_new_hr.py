@@ -188,13 +188,19 @@ def main() -> int:
             """从全文里按公司名切出这一段，切到了才算有职责。"""
             if not full_text or not company:
                 return []
-            idx = full_text.find(company)
+            lines_all = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
+            idx = next((i for i, ln in enumerate(lines_all) if company in ln), -1)
             if idx < 0:
                 return []
-            tail = full_text[idx + len(company):]
-            # 到下一个"公司名"之前为止：粗略用换行段落判断
-            para = tail.split("\n\n")[0] if "\n\n" in tail else tail[:400]
-            body = [ln.strip() for ln in para.splitlines()[1:] if ln.strip()]
+            body: list[str] = []
+            for ln in lines_all[idx + 1:]:
+                # 遇到下一段的"起止 + 公司"行就停
+                if any(k in ln for k in ("公司", "集团", "中心", "工作室")) and (
+                        "20" in ln or "19" in ln):
+                    break
+                if ln.startswith(("教育经历", "项目经历", "校园经历", "专业技能")):
+                    break
+                body.append(ln)
             return body if sum(len(x) for x in body) >= 8 else []
 
         final_work = []
