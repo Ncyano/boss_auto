@@ -883,30 +883,6 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                                       daemon=True)
             worker.start()
 
-            if opened and not close_modal(
-                rect, (ox, oy), plan(winenv.grab_window(rect), icon_check)["wides"],
-                icon_check=icon_check,
-            ):
-                print("  关不掉弹窗，停止。")
-                worker.join(timeout=30)
-                record["judgment"] = judgment_box.get("value") or {}
-                (OUT / f"{stamps}-results.json").write_text(
-                    json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-                return 3
-            modal_open[0] = False
-            print("     已回到列表")
-            handled += 1
-            no_progress = 0        # 采到人了，无进展计数归零
-            if opened:
-                valid += 1
-            PROGRESS.update({"handled": handled, "valid": valid})
-            print(f"     进度：有效 {valid}/{limit}（尝试 {handled} 次）")
-
-            # 候选人之间的随机间隔：判定线程在这段时间里跑完，不额外占用时间
-            gap = 0.0
-            if not reached():
-                gap = wait_between_candidates(min_gap, max_gap)
-
             worker.join(timeout=60)          # 判定最迟 60 秒返回
             verdict = judgment_box.get("value") or {
                 "verdict": "不合适", "status": "调用失败",
@@ -936,6 +912,30 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     print(f"     [warn] 打招呼失败：{exc}")
 
             record["gap_before_next"] = round(gap, 1)
+            if opened and not close_modal(
+                rect, (ox, oy), plan(winenv.grab_window(rect), icon_check)["wides"],
+                icon_check=icon_check,
+            ):
+                print("  关不掉弹窗，停止。")
+                worker.join(timeout=30)
+                record["judgment"] = judgment_box.get("value") or {}
+                (OUT / f"{stamps}-results.json").write_text(
+                    json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+                return 3
+            modal_open[0] = False
+            print("     已回到列表")
+            handled += 1
+            no_progress = 0        # 采到人了，无进展计数归零
+            if opened:
+                valid += 1
+            PROGRESS.update({"handled": handled, "valid": valid})
+            print(f"     进度：有效 {valid}/{limit}（尝试 {handled} 次）")
+
+            # 候选人之间的随机间隔：判定线程在这段时间里跑完，不额外占用时间
+            gap = 0.0
+            if not reached():
+                gap = wait_between_candidates(min_gap, max_gap)
+
             results.append(record)
             last_record_at[:] = [time.time()]
             dump_results(with_csv=False)   # 增量只写 json，csv 在结束时统一生成
