@@ -366,6 +366,23 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
     return ok, msg
 
 
+def raw_wheel(x: int, y: int, clicks: int = -3) -> None:
+    """只发系统滚轮（绝不走 CDP），供"CDP 滚不动"时的最后兜底。"""
+    from ctypes import wintypes
+    import ctypes
+    u = ctypes.windll.user32
+    pt = wintypes.POINT()
+    u.GetCursorPos(ctypes.byref(pt))
+    old = (pt.x, pt.y)
+    try:
+        u.SetCursorPos(int(x), int(y))
+        time.sleep(0.05)
+        for _ in range(abs(int(clicks))):
+            u.mouse_event(0x0800, 0, 0, -120 if clicks < 0 else 120, 0)
+            time.sleep(0.03)
+    finally:
+        u.SetCursorPos(old[0], old[1])
+
 def press_escape() -> bool:
     """页面内派发 Esc 关弹窗（CDP）；失败再用真实键盘。"""
     if _cdp_mode():
@@ -448,7 +465,7 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
         u = ctypes.windll.user32
         px = x if x else u.GetSystemMetrics(0) // 2
         py = y if y else u.GetSystemMetrics(1) // 2
-        scroll(px, py, clicks)
+        raw_wheel(px, py, clicks)
         return True
     except Exception:
         return False

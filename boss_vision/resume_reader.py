@@ -231,7 +231,7 @@ def read_resume(
         ty = oy + probe.y + probe.h // 2
         for attempt in range(2):
             before = _np.asarray(first_img, dtype=_np.int16)
-            winenv.scroll_modal(-4, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
+            winenv.scroll_modal_top(rect[0] + probe.x + probe.w // 2, rect[1] + probe.y + probe.h // 2)
             time.sleep(settle)
             after_img = winenv.grab_window(rect)
             after = _np.asarray(after_img, dtype=_np.int16)
@@ -632,7 +632,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
         img = winenv.grab_window(rect)
         tx, ty = ox + band.x + band.w // 2, oy + band.y + band.h // 2
         before = _np.asarray(img, dtype=_np.int16)
-        winenv.scroll_modal(-4, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
+        winenv.scroll_modal_top(rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
         time.sleep(settle)
         after = _np.asarray(winenv.grab_window(rect), dtype=_np.int16)
         res.at_top = float(_np.abs(after - before).mean()) < 0.5
@@ -726,7 +726,8 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     try:
                         tx = ox + band.x + band.w // 2
                         ty = oy + band.y + band.h // 2
-                        winenv.scroll_modal(-4, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
+                        winenv.scroll_modal_top(rect[0] + band.x + band.w // 2,
+                                                rect[1] + band.y + band.h // 2)
                         time.sleep(0.8)
                         img = winenv.grab_window(rect)
                         band = panel_band(img, wide)

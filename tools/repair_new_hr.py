@@ -116,7 +116,8 @@ def main() -> int:
                 t = (row.get(f"第{k}家职位") or "").strip()
                 p_ = (row.get(f"第{k}家起止") or "").replace(" ", "").strip()
                 if c or t or p_:
-                    out.append({"company": c, "title": t, "period": p_})
+                    out.append({"company": c, "title": t, "period": p_,
+                                "descriptions": []})
             return out
 
         def _ident(e):
@@ -132,8 +133,11 @@ def main() -> int:
                 # 只要没出现过就追加（不会覆盖旧记录）
                 merged.append({"company": (e.get("company") or "").strip(),
                                "title": (e.get("title") or "").strip(),
-                               "period": (e.get("period") or "").strip()})
+                               "period": (e.get("period") or "").strip(),
+                               "descriptions": list(e.get("descriptions") or [])})
             else:
+                if not same.get("descriptions") and e.get("descriptions"):
+                    same["descriptions"] = list(e.get("descriptions") or [])
                 for fld in ("company", "title", "period"):
                     if not (same.get(fld) or "").strip() and (e.get(fld) or "").strip():
                         same[fld] = e.get(fld).strip()
@@ -153,7 +157,12 @@ def main() -> int:
                 descs = [d for d in (e.get("descriptions") or []) if d]
                 texts_all.append(f"{e.get('period','')} {e.get('company','')} {e.get('title','')}"
                                  + ("\n" + "\n".join(descs) if descs else ""))
-            r["工作经历全文"] = "\n".join(texts_all)[:2000]
+            new_text = "\n".join(texts_all)[:2000]
+            old_text = (r.get("工作经历全文") or "").strip()
+            if len(new_text) < len(old_text) * 0.6 and old_text:
+                pass          # 新的比旧的短太多 -> 保留原全文，别把职责丢了
+            else:
+                r["工作经历全文"] = new_text
             periods = [e.get("period") or "" for e in merged if (e.get("period") or "").strip()]
             r["累计工作月数"] = total_months(periods)
             r["最近空档月数"] = gap_months(periods)
