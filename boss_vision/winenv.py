@@ -366,6 +366,27 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
     return ok, msg
 
 
+def scroll_modal_top(x: int | None = None, y: int | None = None) -> bool:
+    """把简历弹窗滚回顶部，并校验 scrollTop ≈ 0。"""
+    if _cdp_mode():
+        try:
+            top = _cdp_client().scroll_modal_top()
+            if top >= 0 and top <= 5:
+                return True
+        except Exception:
+            reset_cdp()
+    # 兜底：真实滚轮向上多滚几次
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        px = x if x else u.GetSystemMetrics(0) // 2
+        py = y if y else u.GetSystemMetrics(1) // 2
+        for _ in range(8):
+            scroll(px, py, 6)
+        return True
+    except Exception:
+        return False
+
 def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -> bool:
     """滚简历弹窗，三级尝试；返回是否真的滚动了。
 
@@ -381,11 +402,16 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
                 return True
         except Exception:
             reset_cdp()
-    # ② CDP 滚轮事件（很多弹窗只监听 wheel，不认 scrollTop）
+    # ② CDP 滚轮事件（很多弹窗只监听 wheel，不认 scrollTop）——必须验证真的动了
     if _cdp_mode() and x and y:
         try:
+            before = _cdp_client().modal_scroll_top()
             _cdp_client().wheel(x, y, delta)
-            return True
+            import time as _t
+            _t.sleep(0.25)
+            after = _cdp_client().modal_scroll_top()
+            if before != after:
+                return True
         except Exception:
             reset_cdp()
     # ③ 真实滚轮

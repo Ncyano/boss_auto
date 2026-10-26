@@ -108,33 +108,56 @@ def main() -> int:
                 if new_val and not str(r.get(key) or "").strip():
                     r[key] = new_val
                     merged_any = True
-        if work and (merged_any or int(r.get("工作条数") or 0) < len(work)):
-            r["工作条数"] = max(int(r.get("工作条数") or 0), len(work))
-            r["教育条数"] = len(edu)
-            periods = [w.get("period") or "" for w in work if (w.get("period") or "").strip()]
+        # 按"经历身份"合并：旧记录优先，新的只补空字段；绝不整段覆盖
+        def _slots(row, n=10):
+            out = []
+            for k in range(1, n + 1):
+                c = (row.get(f"第{k}家公司") or "").strip()
+                t = (row.get(f"第{k}家职位") or "").strip()
+                p_ = (row.get(f"第{k}家起止") or "").replace(" ", "").strip()
+                if c or t or p_:
+                    out.append({"company": c, "title": t, "period": p_})
+            return out
+
+        def _ident(e):
+            return ((e.get("company") or "").strip(),
+                    (e.get("period") or "").replace(" ", "").strip())
+
+        old_entries = _slots(r)
+        merged = [dict(e) for e in old_entries]
+        for e in work:
+            key = _ident(e)
+            same = next((m for m in merged if _ident(m) == key and key != ("", "")), None)
+            if same is None:
+                # 只要没出现过就追加（不会覆盖旧记录）
+                merged.append({"company": (e.get("company") or "").strip(),
+                               "title": (e.get("title") or "").strip(),
+                               "period": (e.get("period") or "").strip()})
+            else:
+                for fld in ("company", "title", "period"):
+                    if not (same.get(fld) or "").strip() and (e.get(fld) or "").strip():
+                        same[fld] = e.get(fld).strip()
+                        merged_any = True
+
+        if merged and (merged_any or len(merged) > len(old_entries)):
+            r["工作条数"] = len(merged)
+            r["教育条数"] = len(edu) or r.get("教育条数", "")
+            for k in range(1, 11):
+                e = merged[k - 1] if k - 1 < len(merged) else {}
+                r[f"第{k}家公司"] = e.get("company", "")
+                r[f"第{k}家职位"] = e.get("title", "")
+                r[f"第{k}家起止"] = e.get("period", "")
+            # 全文与月数一律从合并结果重建
+            texts_all = []
+            for e in merged:
+                descs = [d for d in (e.get("descriptions") or []) if d]
+                texts_all.append(f"{e.get('period','')} {e.get('company','')} {e.get('title','')}"
+                                 + ("\n" + "\n".join(descs) if descs else ""))
+            r["工作经历全文"] = "\n".join(texts_all)[:2000]
+            periods = [e.get("period") or "" for e in merged if (e.get("period") or "").strip()]
             r["累计工作月数"] = total_months(periods)
             r["最近空档月数"] = gap_months(periods)
-            r["工作经历全文"] = "\n".join(
-                f"{w.get('period','')} {w.get('company','')} {w.get('title','')}\n"
-                + "\n".join(w.get("descriptions") or []) for w in work)[:2000]
-            for k in range(1, 11):
-                w = work[k - 1] if k - 1 < len(work) else {}
-                r[f"第{k}家公司"] = w.get("company", "")
-                r[f"第{k}家职位"] = w.get("title", "")
-                r[f"第{k}家起止"] = w.get("period", "")
-        # 用"最终要保存的字段"重算完整性，避免 mark 成功但内容没落盘
-        ok2, missing2, nice2 = completeness.check({
-            "name": r.get("姓名", ""),
-            "basic": {"age": r.get("年龄", ""), "education_mode": r.get("学历性质", ""),
-                      "graduation_year": r.get("毕业年份", ""), "status": r.get("求职状态", "")},
-            "education": ([{"school": r.get("学校", ""), "degree": r.get("学历", ""),
-                            "major": r.get("专业", ""), "period": r.get("教育起止", "")}]
-                          if (r.get("学校") or r.get("学历")) else []),
-            "work": [{"company": r.get(f"第{k}家公司", ""), "title": r.get(f"第{k}家职位", ""),
-                      "period": r.get(f"第{k}家起止", "")}
-                     for k in range(1, 11) if (r.get(f"第{k}家公司") or r.get(f"第{k}家职位"))],
-            "collection": {"complete": True}})
-        ok, missing, nice = ok2, missing2, nice2
+
         r["采集完整"] = "是" if ok else "否"
         r["缺失字段"] = "；".join(missing)
         r["建议补充"] = "；".join(nice)

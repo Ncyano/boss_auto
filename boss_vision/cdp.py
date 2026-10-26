@@ -232,6 +232,38 @@ class CDP:
                    {"type": "mouseWheel", "x": cx, "y": cy,
                     "deltaX": 0, "deltaY": delta_y})
 
+    def scroll_modal_top(self) -> int:
+        """把简历弹窗滚到顶部，返回最终 scrollTop（应接近 0）。"""
+        js = (
+            "(() => {"
+            " const els=[...document.querySelectorAll('div,section,main')].filter(e=>{"
+            "   const cs=getComputedStyle(e);"
+            "   return (cs.overflowY==='auto'||cs.overflowY==='scroll')"
+            "     && e.scrollHeight > e.clientHeight + 100 && e.clientHeight > 300; });"
+            " if(!els.length) return -1;"
+            " els.sort((a,b)=>b.scrollHeight-a.scrollHeight);"
+            " const t=els[0]; t.scrollTop = 0;"
+            " return Math.round(t.scrollTop);"
+            "})()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return int(res["result"].get("value") or -1)
+
+    def modal_scroll_top(self) -> int:
+        js = (
+            "(() => {"
+            " const els=[...document.querySelectorAll('div,section,main')].filter(e=>{"
+            "   const cs=getComputedStyle(e);"
+            "   return (cs.overflowY==='auto'||cs.overflowY==='scroll')"
+            "     && e.scrollHeight > e.clientHeight + 100 && e.clientHeight > 300; });"
+            " if(!els.length) return -1;"
+            " els.sort((a,b)=>b.scrollHeight-a.scrollHeight);"
+            " return Math.round(els[0].scrollTop);"
+            "})()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return int(res["result"].get("value") or -1)
+
     def scroll_modal(self, delta_y: int) -> int:
         """滚简历弹窗：不依赖坐标，直接找顶层文档里"内容最长的可滚动容器"。
 
