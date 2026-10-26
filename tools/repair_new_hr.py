@@ -199,16 +199,20 @@ def main() -> int:
                 start = per.split("-")[0] if "-" in per else per
                 return start in line.replace(" ", "")
 
-            idx = next((i for i, ln in enumerate(lines_all) if _hit(ln)), -1)
+            # 先把"公司名出现的行"找全，后面判定唯一性
+            occur = [i for i, ln in enumerate(lines_all) if company in ln]
+            if not per:
+                # 时间缺失：只有该公司唯一出现才敢用，否则同公司多段无法区分
+                if len(occur) != 1:
+                    return []
+                idx = occur[0]
+            else:
+                idx = next((i for i, ln in enumerate(lines_all) if _hit(ln)), -1)
             if idx < 0 and per:
                 # 目标经历有明确时间，全文里却没有对应条目 -> 视为时间冲突，不取别段的职责
                 return []
             if idx < 0:
-                # 目标时间缺失：先确认该公司在全文只出现一次，避免取到同公司另一段的职责
-                occur = [i for i, ln in enumerate(lines_all) if company in ln]
-                if len(occur) != 1:
-                    return []
-                idx = occur[0]
+                return []      # 时间对不上且不是唯一公司 -> 不取
             if idx < 0:
                 return []
             body: list[str] = []
