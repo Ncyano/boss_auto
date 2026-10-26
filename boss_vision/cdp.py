@@ -420,10 +420,12 @@ class CDP:
             "     if (!(r.top>=-4 && r.bottom<=W.innerHeight+4 && r.left>=-4 && r.right<=W.innerWidth+4)) continue;"
             "     if (C) { let n=e, ok=false; while(n){ if(((n.className||'')+'').indexOf(C)>=0){ok=true;break;} n=n.parentElement; } if(!ok) continue; }"
             "     return {x:Math.round(r.x+r.width/2+ox), y:Math.round(r.y+r.height/2+oy),"
+            "       w:Math.round(r.width), h:Math.round(r.height),"
             "       tag:e.tagName, cls:(e.className||'').toString().slice(0,30)};"
             "   }"
             "   return null;"
             " };"
+            " const boxOf = (e) => { const r=e.getBoundingClientRect(); return {x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2), w:Math.round(r.width), h:Math.round(r.height)}; };"
             " let hit = scan(document, 0, 0);"
             " if (!hit) {"
             "   for (const f of document.querySelectorAll('iframe')) {"
@@ -448,6 +450,7 @@ class CDP:
         cx, cy = float(box["x"]), float(box["y"])
         base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "buttons": 1}
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy, "button": "none", "buttons": 0})
+        time.sleep(0.30)          # 先 hover 停留，让组件进入 hover 态再按（probe 里是隔了几秒才点）
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
         time.sleep(0.08)
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
@@ -517,6 +520,7 @@ class CDP:
         cx, cy = float(box["x"]), float(box["y"])
         base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "buttons": 1}
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy, "button": "none", "buttons": 0})
+        time.sleep(0.30)          # 先 hover 停留，让组件进入 hover 态再按（probe 里是隔了几秒才点）
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
         time.sleep(0.08)
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
