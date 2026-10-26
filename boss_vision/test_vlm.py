@@ -126,15 +126,19 @@ def main() -> int:
         state["i"] = min(state["i"] + 1, len(frames) - 1)
 
     real_grab, real_scroll = winenv.grab_window, winenv.scroll
+    real_scroll_at = getattr(winenv, "scroll_at", None)
     try:
         winenv.grab_window = fake_grab
         winenv.scroll = fake_scroll
+        winenv.scroll_at = lambda x, y, c=0: fake_scroll(x, y, c)
         resume_reader.time.sleep = lambda s: None
         Handler.call = 0
         rr = resume_reader.read_resume_vlm((0, 0, 2560, 1400), vision.Rect(1609, 252, 285, 40),
                                            log=lambda *_: None, max_steps=6, cfg=cfg)
     finally:
         winenv.grab_window, winenv.scroll = real_grab, real_scroll
+        if real_scroll_at is not None:
+            winenv.scroll_at = real_scroll_at
 
     check("读取完成", rr.complete, rr.stopped_reason)
     check("读到姓名", rr.name == "测试候选人", repr(rr.name))
