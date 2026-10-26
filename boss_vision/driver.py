@@ -520,6 +520,13 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
 
         if picked is None:
             no_progress += 1
+            if no_progress == 3:
+                try:
+                    winenv.disable_cdp_scroll()
+                    print("  CDP 滚动无效（列表是虚拟滚动），本次运行改用真实滚轮；"
+                          "点击仍走 CDP")
+                except Exception:
+                    pass
             # 不设硬上限（max_scrolls=None），但连续无进展太多说明真没人了 -> 优雅停止
             if max_scrolls is None and no_progress > NO_PROGRESS_LIMIT:
                 print(f"  连续 {no_progress} 次滚动都没拿到新候选人 -> 判断列表已到底，停止")

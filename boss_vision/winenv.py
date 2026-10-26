@@ -141,6 +141,19 @@ class InputBlocked(RuntimeError):
 _CDP_CLIENT = [None]
 
 
+_CDP_SCROLL_OK = [True]      # CDP 滚不动时置 False，退回真实滚轮
+
+
+def disable_cdp_scroll() -> None:
+    """页面用虚拟滚动（BOSS 推荐列表在 iframe 里）时 CDP 滚轮可能无效，
+    调用一次就让滚动退回真实鼠标，点击仍然走 CDP。"""
+    _CDP_SCROLL_OK[0] = False
+
+
+def reset_cdp_scroll() -> None:
+    _CDP_SCROLL_OK[0] = True
+
+
 def _cdp_mode() -> bool:
     """config.input.mode == "cdp" 且调试端口在线时，走无鼠标路径。"""
     try:
@@ -354,9 +367,10 @@ def injection_permission(hwnd: int) -> tuple[bool, str]:
 
 
 def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
-    if _cdp_mode():
+    if _cdp_mode() and _CDP_SCROLL_OK[0]:
         try:
-            _cdp_client().wheel(x, y, clicks * 120)
+            # 约定 clicks<0 = 向下滚；CDP 的 deltaY>0 才是向下
+            _cdp_client().wheel(x, y, -clicks * 120)
             return
         except Exception:
             reset_cdp()
