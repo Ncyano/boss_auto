@@ -456,7 +456,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         max_attempts = max(limit * 5, limit + 10)
 
     def reached() -> bool:
-        """是否已达目标：count_valid 时只算真正打开简历的，否则算尝试次数。"""
+        """是否已达目标：count_valid 时只算真正打招呼成功的，否则算尝试次数。"""
         return (valid if count_valid else handled) >= limit
 
     while not reached() and handled < max_attempts and not STOP:
@@ -932,10 +932,11 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             print("     已回到列表")
             handled += 1
             no_progress = 0        # 采到人了，无进展计数归零
-            if opened:
+            # 有效次数 = 真正点成功「打招呼」的人数（不合适的人不算）
+            if record.get("greeted"):
                 valid += 1
             PROGRESS.update({"handled": handled, "valid": valid})
-            print(f"     进度：有效 {valid}/{limit}（尝试 {handled} 次）")
+            print(f"     进度：已打招呼 {valid}/{limit}（尝试 {handled} 次）")
 
             # 候选人之间的随机间隔：判定线程在这段时间里跑完，不额外占用时间
             gap = 0.0

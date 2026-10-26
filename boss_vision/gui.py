@@ -104,7 +104,7 @@ class App:
         status = ttk.Label(top, text=f"识别方式：{_reader_text}", foreground="#0a6")
         status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
-        add_row(1, "有效人次目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
+        add_row(1, "打招呼目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
                 "（只有成功打开简历的才算一次）")
 
         gap_row = ttk.Frame(top)
@@ -179,7 +179,7 @@ class App:
         state_map = {"idle": "空闲", "running": "运行中", "done": "已完成", "stopped": "已停止"}
         st = state_map.get(p.get("state", "idle"), p.get("state"))
         self.lbl_status.configure(
-            text=f"状态：{st}   有效 {done}/{target}   尝试 {p.get('handled', 0)} 次")
+            text=f"状态：{st}   已打招呼 {done}/{target}   尝试 {p.get('handled', 0)} 次")
 
         # 任务耗时：运行中实时走，结束后显示总时长
         if self.start_ts:
