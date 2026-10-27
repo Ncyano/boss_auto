@@ -12,6 +12,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 SLOTS = 10
 
 
+# 这些缺失只做"建议补充"，不阻断判定（学习形式、证书之类）
+SOFT_MISSING = ("学习形式", "证书", "实习", "专业排名", "主修课程", "专业技能", "荣誉")
+
+
+def _blocking_missing(rec: dict) -> list[str]:
+    """真正的缺失项：去掉"学习形式"这类非阻断项。"""
+    out = []
+    for m in (rec.get("missing") or []):
+        text = str(m).strip()
+        if not text:
+            continue
+        if any(k in text for k in SOFT_MISSING):
+            continue
+        out.append(text)
+    return out
+
+
+def _collected_ok(rec: dict) -> bool:
+    """采集是否足够判定：工作经历章节读到且有内容 + 教育经历读到且有内容。"""
+    work = rec.get("work") or []
+    edu = rec.get("education") or []
+    if not (work or str(rec.get("work_state") or "") == "explicit_none"):
+        return False
+    if not edu:
+        return False
+    return not _blocking_missing(rec)
+
+
 def record_to_row(rec: dict) -> dict:
     """把 driver 的 record 映射成 screening 认识的一行。"""
     basic = rec.get("basic") or {}
@@ -31,11 +59,11 @@ def record_to_row(rec: dict) -> dict:
         "学历": (first.get("degree") or "").strip(),
         "教育起止": (first.get("period") or "").strip(),
         "工作经历条数": len(work),
-        "采集完成": "是" if rec.get("complete") or rec.get("reached_education") else "否",
+        "采集完成": "是" if _collected_ok(rec) else "否",
         "需复核": "是" if rec.get("needs_review") else "否",
         "复核原因": rec.get("review_reason") or "",
         "冲突数": len(rec.get("conflicts") or []),
-        "缺失字段": "；".join(rec.get("missing") or []),
+        "缺失字段": "；".join(_blocking_missing(rec)),
         "工作经历状态": rec.get("work_state", ""),
         "工作经历全文": "\n".join(
             f'{w.get("period", "")} {w.get("company", "")}/{w.get("title", "")}'
