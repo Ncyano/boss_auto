@@ -1222,11 +1222,14 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     res.screen_count = len(crops)
     log(f"  快速读法：截到 {len(crops)} 屏")
 
-    # ---------- 3. 并行 OCR ----------
+    # ---------- 3. 并行 OCR（默认就用放大分辨率，少走一轮失败重读） ----------
     texts: list[str] = []
+    zoom_cfg = dict(cfg)
+    zoom_cfg["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
+    log(f"  OCR 分辨率: {zoom_cfg['max_image_side']}px（放大模式）")
     try:
         with ThreadPoolExecutor(max_workers=min(4, max(1, len(crops)))) as pool:
-            futures = [pool.submit(vlm.read_screen_text, c, cfg) for c in crops]
+            futures = [pool.submit(vlm.read_screen_text, c, zoom_cfg) for c in crops]
             for fut in futures:
                 try:
                     texts.append((fut.result() or {}).get("text", ""))
