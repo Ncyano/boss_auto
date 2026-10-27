@@ -376,18 +376,20 @@ class CDP:
     def scroll_in_container(self, x: float, y: float, delta_y: int) -> int:
         """在 (x,y) 所在的可滚动容器里滚（顶层 + iframe），返回实际位移。
 
-        列表是 iframe 里的虚拟滚动容器，滚 documentElement 未必生效。
+        iframe 内的 elementFromPoint 用的是"帧内坐标"，必须先减去 iframe 偏移。
         """
         js = (
             "(() => {"
             " const PX=__PX__, PY=__PY__, DY=__DY__;"
-            " const docs=[document];"
+            " const docs=[[document,0,0]];"
             " for (const f of document.querySelectorAll('iframe')) {"
-            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
-            " for (const d of docs) {"
+            "   try { const fr=f.getBoundingClientRect();"
+            "     if (f.contentDocument) docs.push([f.contentDocument, fr.left, fr.top]);"
+            "   } catch(e) {} }"
+            " for (const [d,ox,oy] of docs) {"
             "   const W=(d.defaultView||window);"
             "   let el=null;"
-            "   try { el=d.elementFromPoint(PX, PY); } catch(e) {}"
+            "   try { el=d.elementFromPoint(PX-ox, PY-oy); } catch(e) {}"
             "   let node=el;"
             "   while (node) {"
             "     const cs=W.getComputedStyle(node);"
@@ -644,6 +646,35 @@ class CDP:
 
     def close(self) -> None:
         self.ws.close()
+
+
+def list_at_bottom() -> bool:
+    """当前页面列表是否已滚到底（到底了再滚也不会有新卡片）。"""
+    try:
+        c = CDP()
+    except Exception:
+        return False
+    try:
+        js = (
+            "(() => {"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " for (const d of docs) {"
+            "   const se=d.scrollingElement||d.documentElement;"
+            "   if (!se) continue;"
+            "   const max=se.scrollHeight-se.clientHeight;"
+            "   if (max>1000 && se.scrollTop >= max-8) return true;"
+            " }"
+            " return false; })()"
+        )
+        res = c._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return bool(res["result"].get("value"))
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
 
 
 def available(port: int = DEFAULT_PORT) -> bool:

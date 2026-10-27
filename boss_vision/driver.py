@@ -685,6 +685,17 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 if not live:
                     print(f"  dry-run：不动作。标注图 {annotate(img, p)}")
                     return 0
+                # 先看列表是不是已经到底了：到底了再滚也不会出新卡片
+                try:
+                    import cdp as _cdpb
+                    at_bottom = _cdpb.available() and _cdpb.list_at_bottom()
+                except Exception:
+                    at_bottom = False
+                if at_bottom:
+                    print("  列表已经到底（没有更多候选人了）")
+                    if not allow_refresh:
+                        print("  需要换筛选条件，或勾选「刷新」让首页重新加载 -> 停止")
+                        break
                 winenv.scroll(ox + rect[2] // 2, oy + rect[3] // 2, -3)
                 time.sleep(0.9)
                 continue
