@@ -659,13 +659,16 @@ def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
             return
     if _cdp_mode() and _CDP_SCROLL_OK[0]:
         try:
-            # 约定 clicks<0 = 向下滚；用 JS 直接滚（BOSS 列表在 iframe 里且是虚拟滚动）
-            before = _cdp_client().scroll_top()
-            got = _cdp_client().scroll_js(-clicks * 120)
+            cli = _cdp_client()
+            before = cli.scroll_top()
+            got = cli.scroll_js(-clicks * 120)          # 先试页面内 JS 滚动
             if got != before:
                 return
-            _cdp_client().wheel(x, y, -clicks * 120)   # 退一步试滚轮事件
-            return
+            cli.wheel(x, y, -clicks * 120)              # 再试滚轮事件
+            time.sleep(0.25)
+            if cli.scroll_top() != before:              # 必须验证真的动了
+                return
+            print("     [warn] 页面内滚动无效，改用真实滚轮")
         except Exception:
             reset_cdp()
     """在 (x, y) 处滚轮。clicks 为负表示向下滚。"""
