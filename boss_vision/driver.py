@@ -786,21 +786,33 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 print("  截图来源已降级，本轮不点击，重新标定后再继续")
                 continue
 
-            winenv.click(ox + cx, oy + cy)
-            time.sleep(1.0)
-            opened = False
-            p2 = None
-            for _ in range(8):
-                p2 = plan(winenv.grab_window(rect), icon_check)
-                if winenv._NEED_REBASE[0]:
-                    print("  截图来源已降级，本轮中止，重新标定后再继续")
-                    continue
-                if p2["state"] == "resume_modal":
-                    opened = True
-                    modal_open[0] = True
-                    break
-                time.sleep(0.5)
+            def _try_open(click_x: int, click_y: int) -> tuple[bool, dict | None]:
+                winenv.click(ox + click_x, oy + click_y)
+                time.sleep(1.0)
+                for _ in range(8):
+                    pp = plan(winenv.grab_window(rect), icon_check)
+                    if winenv._NEED_REBASE[0]:
+                        return False, pp
+                    if pp["state"] == "resume_modal":
+                        return True, pp
+                    time.sleep(0.5)
+                return False, pp
+
+            opened, p2 = _try_open(cx, cy)
+            if not opened:
+                # 点偏了（DPI/滚动位置变化）就往上一点再试一次
+                print("     没打开简历，向上偏移重试一次")
+                card = p["cards"][idx]
+                opened, p2 = _try_open(card.x + card.w // 2 - ox, card.y - oy + 20)
             print(f"     弹窗已打开: {opened}")
+            if opened:
+                modal_open[0] = True
+            else:
+                # 打不开就跳过这张卡，不要把"列表页"当简历判成不合适
+                print("     [skip] 这张卡片打不开简历，跳过（不计入结果）")
+                if sig:
+                    seen_sigs.add(sig)
+                continue
 
             record = {"index": handled + 1, "click": [ox + cx, oy + cy], "opened": opened}
             if opened and read == "scroll" and p2 and p2["wides"]:
