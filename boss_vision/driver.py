@@ -374,7 +374,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
     print(f"位置: ({ox},{oy}) 尺寸: {rect[2]}x{rect[3]}")
     print(f"模式: {'LIVE（会真实点击）' if live else 'DRY-RUN（只算不点）'}")
     _cdp_mtime = (Path(__file__).with_name("cdp.py")).stat().st_mtime
-    print(f"  代码版本: cdp.py {time.strftime('%H:%M:%S', time.localtime(_cdp_mtime))}")
+    _we_mtime = (Path(__file__).with_name("winenv.py")).stat().st_mtime
+    print(f"  代码版本: cdp.py {time.strftime('%H:%M:%S', time.localtime(_cdp_mtime))}"
+          f" | winenv.py {time.strftime('%H:%M:%S', time.localtime(_we_mtime))}")
 
     # 权限体检：注入被 UIPI 拦是最常见的"点了没反应"，先把两边的完整性级别打出来
     if live:
