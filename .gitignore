@@ -82,3 +82,7 @@ data/æ–°äººäº‹-*.csv
 data/_*.py
 data/parse-new*.log
 data/eval104*.log
+
+# ´ò°ü²úÎï
+dist/
+
