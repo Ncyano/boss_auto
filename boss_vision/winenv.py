@@ -149,6 +149,13 @@ def capture_mode() -> str:
     return _CAPTURE_MODE[0]
 
 
+class CaptureDowngraded(RuntimeError):
+    """抓图方式被降级（CDP -> 屏幕），当前这一轮必须中止并重新标定坐标。"""
+
+
+_NEED_REBASE = [False]     # 抓图方式变了 -> 坐标原点必须重新标定
+
+
 def grab_window(rect: tuple[int, int, int, int]) -> np.ndarray:
     """抓窗口画面。cdp 模式用浏览器截图（窗口被遮挡也可以）。"""
     if _CAPTURE_MODE[0] == "cdp":
@@ -618,10 +625,6 @@ def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -
         return True
     except Exception:
         return False
-
-
-class CaptureDowngraded(RuntimeError):
-    """抓图方式被降级（CDP -> 屏幕），当前这一轮必须中止并重新标定坐标。"""
 
 
 def scroll_at(x: int, y: int, clicks: int = -3) -> None:

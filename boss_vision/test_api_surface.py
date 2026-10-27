@@ -33,6 +33,7 @@ CDP_REQUIRED = [
 ]
 
 WINENV_REQUIRED = [
+    "_NEED_REBASE", "CaptureDowngraded", "_CAPTURE_MODE",
     "grab_window", "set_capture", "capture_mode",
     "click", "scroll", "scroll_at", "scroll_modal", "scroll_modal_top",
     "greet", "press_escape", "close_dialog_by_js",
