@@ -348,8 +348,11 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 else:
                     print("  [warn] 浏览器起来了但端口仍不通，退回屏幕抓图")
             else:
-                print("  [warn] 无法启动浏览器 —— 退回屏幕抓图。")
-                print("         也可以先运行 run-edge-debug.cmd 再点开始。")
+                print("  [错误] 后台模式需要调试端口，但浏览器起不来。")
+                print("         请先完全退出所有 Edge 窗口，再点开始；")
+                print("         或手动运行 run-edge-debug.cmd（带调试端口的浏览器）。")
+                print("         为避免点错人，本次不启动采集。")
+                return 2
     if winenv.capture_mode() == "cdp":
         ox, oy = 0, 0
         try:
