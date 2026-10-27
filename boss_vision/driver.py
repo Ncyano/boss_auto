@@ -709,7 +709,15 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 break
             refreshes += 1
             cap2 = "不限" if max_refresh is None else max_refresh
-            print(f"  本屏没有可点的新卡片 -> 刷新页面（第 {refreshes}/{cap2} 次）")
+            print(f"  本屏没有可点的新卡片 -> 刷新（第 {refreshes}/{cap2} 次）")
+            try:
+                if winenv.click_list_refresh():
+                    print("     已点列表底部「刷新」，换一批候选人")
+                    last_click_y = -9999
+                    time.sleep(1.5)
+                    continue
+            except Exception as exc:
+                print(f"     [warn] 点刷新按钮失败：{exc}")
             if not live:
                 print(f"  dry-run：不刷新。标注图 {annotate(img, p)}")
                 return 0

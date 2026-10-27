@@ -327,6 +327,23 @@ def press_key(vk: int, hold: tuple[float, float] = (0.05, 0.12)) -> None:
     user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
 
 
+def click_list_refresh() -> bool:
+    """点列表底部的「刷新」按钮（BOSS 自带的换一批）。不移动鼠标。"""
+    if not _cdp_mode():
+        return False
+    try:
+        cli = _cdp_client()
+        if cli.click_element("刷新", exact=True):
+            time.sleep(2.0)
+            return True
+        if cli.click_element("刷新获取最新列表", exact=False):
+            time.sleep(2.0)
+            return True
+    except Exception as exc:
+        print(f"  [warn] 点「刷新」按钮失败：{exc}")
+        reset_cdp()
+    return False
+
 def refresh_page(hwnd: int, wait: float = 0.3) -> bool:
     """刷新当前页面。优先用 CDP 的 Page.reload（不需要窗口焦点，后台也能刷）。
 
