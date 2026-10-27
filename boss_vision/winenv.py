@@ -668,13 +668,27 @@ def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
             return
         except Exception:
             reset_cdp()
-    """在 (x, y) 处滚轮。clicks 为负表示向下滚。同样要求光标先到位。"""
-    move_to(x, y, duration=0.2)
-    time.sleep(0.06)
-    got = cursor_pos()
-    if abs(got[0] - x) > tolerance or abs(got[1] - y) > tolerance:
-        raise InputBlocked(f"滚动前光标未到位：期望 ({x},{y})，实际 {got}，已放弃滚动。")
-    user32.mouse_event(0x0800, 0, 0, int(clicks * 120), 0)  # MOUSEEVENTF_WHEEL
+    """在 (x, y) 处滚轮。clicks 为负表示向下滚。"""
+    for _attempt in range(2):
+        move_to(x, y, duration=0.2)
+        time.sleep(0.08)
+        got = cursor_pos()
+        if abs(got[0] - x) <= tolerance and abs(got[1] - y) <= tolerance:
+            user32.mouse_event(0x0800, 0, 0, int(clicks * 120), 0)  # MOUSEEVENTF_WHEEL
+            return
+    # 光标没到位（被别的程序抢了鼠标 / 注入被拦）：不中断整轮，改用页面内滚动
+    print(f"  [warn] 光标未到位（期望 ({x},{y})，实际 {got}），改用页面内滚动")
+    if _cdp_mode():
+        try:
+            cli = _cdp_client()
+            before = cli.scroll_top()
+            if cli.scroll_js(-clicks * 120) != before:
+                return
+            cli.scroll_css(int(x), int(y), -clicks * 120)
+            return
+        except Exception:
+            reset_cdp()
+    raise InputBlocked(f"光标未到位且页面内滚动不可用：期望 ({x},{y})，实际 {got}")
 
 
 VK_CONTROL, VK_A, VK_C = 0x11, 0x41, 0x43
