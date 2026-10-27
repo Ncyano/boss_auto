@@ -909,6 +909,30 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                             print(f"     [warn] 重读失败：{exc}")
                             break
                     rr = best
+                    # 简历明明开着，却一条经历都没读到：多半是截图/OCR 偶发失败
+                    # （页面还没渲染完、裁切到空白区）。重读一次；还空就跳过，别判"不合适"。
+                    if not (rr.work or rr.education):
+                        print("     [!] 工作/教育都是 0 条，可能截到空屏，等 1.5 秒重读一次")
+                        time.sleep(1.5)
+                        try:
+                            rr_retry = resume_reader.read_resume_vlm(
+                                rect, p2["wides"][0], log=print, name_hint=card_name)
+                            if rr_retry.work or rr_retry.education:
+                                rr = rr_retry
+                                print(f"     重读成功：工作 {len(rr.work)} 条 / 教育 {len(rr.education)} 条")
+                        except Exception as exc:
+                            print(f"     [warn] 重读失败：{exc}")
+                        if not (rr.work or rr.education):
+                            print("     [skip] 仍读不到任何经历，跳过（不计入结果）")
+                            if sig:
+                                seen_sigs.add(sig)
+                            try:
+                                close_modal(rect, (ox, oy), p2["wides"],
+                                            icon_check=icon_check)
+                                modal_open[0] = False
+                            except Exception:
+                                pass
+                            continue
                     record.update({
                         "name": rr.name,
                         "reader": getattr(rr, "reader", "ocr"),
