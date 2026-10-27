@@ -228,6 +228,8 @@ class App:
         # 代码版本提示：GUI 一旦启动就固定用内存里的模块，改过的文件不重启不会生效
         drv_mtime = (_HERE / "driver.py").stat().st_mtime
         fmt = "%Y-%m-%d %H:%M:%S"
+        print(f"程序目录: {_HERE}")
+        print(f"解释器: {sys.executable}")
         print(f"代码版本: driver.py 修改于 {time.strftime(fmt, time.localtime(drv_mtime))}"
               f" | 本窗口启动于 {time.strftime(fmt, time.localtime(self.boot_ts))}")
         if drv_mtime > self.boot_ts:
