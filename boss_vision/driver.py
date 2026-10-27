@@ -923,6 +923,28 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                         except Exception as exc:
                             print(f"     [warn] 重读失败：{exc}")
                         if not (rr.work or rr.education):
+                            # 最后一招：整屏送 OCR（不走裁切），很多"裁偏了"的情况能救回来
+                            print("     [!] 改用整屏 OCR 再试一次（不走裁切）")
+                            try:
+                                import vlm as _vlm_fs
+                                import judge as _judge_fs
+                                _img = winenv.grab_window(rect)
+                                _txt = (_vlm_fs.read_screen_text(_img, _vlm_fs.load_config(),
+                                                                 log=print) or {}).get("text", "")
+                                print(f"     整屏 OCR 读到 {len(_txt)} 字")
+                                if len(_txt) >= 200:
+                                    _st = _judge_fs.structure_text(_txt, _judge_fs.struct_config())
+                                    _parts = _vlm_fs.normalize(
+                                        (_st or {}).get("data", {}).get("sections"))
+                                    _w = _parts.get("work") or []
+                                    _e = _parts.get("education") or []
+                                    print(f"     整屏恢复：工作 {len(_w)} 条 / 教育 {len(_e)} 条")
+                                    if _w or _e:
+                                        rr.work, rr.education = _w, _e
+                                        rr.text = (rr.text or "") + "\n" + _txt
+                            except Exception as exc:
+                                print(f"     [warn] 整屏重试失败：{exc}")
+                        if not (rr.work or rr.education):
                             print("     [skip] 仍读不到任何经历，跳过（不计入结果）")
                             if sig:
                                 seen_sigs.add(sig)
