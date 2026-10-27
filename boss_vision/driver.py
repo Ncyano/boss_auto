@@ -818,7 +818,27 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     seen_missing: set = set()
                     fast_mode = bool(getattr(best, "reader", "") == "vlm-fast")
                     if fast_mode:
-                        print("     快速读法：跳过整段回顶重读（缺失项保留为提示）")
+                        # 快速读法默认不回顶重读；但"没读到教育经历"会让判定直接落成
+                        # 采集不完整（等于把可能合适的人丢掉），这种情况补读一次
+                        _m = list(getattr(best, "missing", []) or [])
+                        _edu_missing = any(("教育" in m) or ("学校" in m) or ("学历" in m)
+                                           for m in _m)
+                        if _edu_missing:
+                            print(f"     快速读法缺教育经历（{'；'.join(_m[:3])}），"
+                                  f"用完整读法回顶补读一次")
+                            try:
+                                rr2 = resume_reader.read_resume_vlm(
+                                    rect, p2["wides"][0], log=print, name_hint=card_name)
+                                if _richness(rr2) > _richness(best):
+                                    print(f"     补读结果更好，采用（工作 {len(rr2.work)} 条 / "
+                                          f"教育 {len(rr2.education)} 条 / 缺失 {len(rr2.missing)} 项）")
+                                    best = rr2
+                                else:
+                                    print(f"     补读未改善（缺失 {len(rr2.missing)} 项），保留原结果")
+                            except Exception as exc:
+                                print(f"     [warn] 补读失败：{exc}")
+                        else:
+                            print("     快速读法：跳过整段回顶重读（缺失项保留为提示）")
                         retry = -1
                     for retry in range(0 if fast_mode else 2):
                         missing = list(getattr(best, "missing", []) or [])
