@@ -1,0 +1,30 @@
+{
+  "vision": {
+    "provider": "qwen",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3-vl-plus",
+    "api_key_env": "VLM_API_KEY",
+    "api_key": "",
+    "temperature": 0,
+    "max_tokens": 2000,
+    "timeout": 120,
+    "retries": 2,
+    "max_image_side": 1024
+  },
+  "judge": {
+    "provider": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "api_key": "",
+    "temperature": 0,
+    "max_tokens": 2000,
+    "timeout": 120,
+    "retries": 3,
+    "thinking": "disabled"
+  },
+  "paths": {
+    "data_dir": "data",
+    "kb_dir": "运营助理知识库_v0.1"
+  }
+}
