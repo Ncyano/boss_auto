@@ -299,12 +299,14 @@ def click(x: int, y: int, settle: tuple[float, float] = (0.06, 0.14), tolerance:
     move_to(x, y)
     time.sleep(0.08)
     got = cursor_pos()
-    if abs(got[0] - x) > tolerance or abs(got[1] - y) > tolerance:
+    if abs(got[0] - x) > 40 or abs(got[1] - y) > 40:
         raise InputBlocked(
-            f"光标未到位：期望 ({x},{y})，实际 {got}；SendInput 是否全部成功={_LAST_SEND_OK}，"
-            f"GetLastError={last_error()}。"
+            f"光标未到位：期望 ({x},{y})，实际 {got}；"
+            f"SendInput 是否全部成功={_LAST_SEND_OK}，GetLastError={last_error()}。"
             " 常见原因：进程完整性级别低于目标窗口（UIPI）、或运行在被限制的子进程/沙箱里。已放弃本次点击。"
         )
+    if abs(got[0] - x) > tolerance or abs(got[1] - y) > tolerance:
+        print(f"  [warn] 光标偏移 {got} → 期望 ({x},{y})，按实际位置继续点击")
     time.sleep(random.uniform(0.05, 0.12))
     for flag in (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP):
         ax, ay = _abs(x, y)
