@@ -328,11 +328,21 @@ def press_key(vk: int, hold: tuple[float, float] = (0.05, 0.12)) -> None:
 
 
 def refresh_page(hwnd: int, wait: float = 0.3) -> bool:
-    """刷新当前页面（F5）。
+    """刷新当前页面。优先用 CDP 的 Page.reload（不需要窗口焦点，后台也能刷）。
 
-    F5 是键盘事件，只发给前台窗口；GUI 抢了前台时就会刷错窗口。
-    所以先强制置前并确认，拿不到前台就返回 False（调用方据此报错），不要假装刷新成功。
+    只有 CDP 不可用时才退回 F5（F5 只发给前台窗口，容易刷错）。
     """
+    if _cdp_mode():
+        try:
+            cli = _cdp_client()
+            cli._call("Page.enable", {})
+            cli._call("Page.reload", {"ignoreCache": False})
+            time.sleep(2.5)
+            reset_cdp()          # 页面重载后连接状态可能变，重连
+            return True
+        except Exception as exc:
+            print(f"  [warn] CDP 刷新失败：{exc}")
+            reset_cdp()
     if not focus(hwnd):
         return False
     time.sleep(wait)

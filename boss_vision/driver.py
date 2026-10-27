@@ -696,6 +696,8 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                     if not allow_refresh:
                         print("  需要换筛选条件，或勾选「刷新」让首页重新加载 -> 停止")
                         break
+                    print("  已勾选刷新 -> 改走刷新，重新拉一批候选人")
+                    max_scrolls = scrolls        # 立即进入下面的刷新分支
                 winenv.scroll(ox + rect[2] // 2, oy + rect[3] // 2, -3)
                 time.sleep(0.9)
                 continue
