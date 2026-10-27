@@ -951,6 +951,10 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                                     if _w or _e:
                                         rr.work, rr.education = _w, _e
                                         rr.text = (rr.text or "") + "\n" + _txt
+                                        rr.missing = []          # 已用整屏读全，缺失清空
+                                        rr.complete = True
+                                        rr.reached_education = True
+                                        rr.stopped_reason = "整屏 OCR 恢复"
                             except Exception as exc:
                                 print(f"     [warn] 整屏重试失败：{exc}")
                         if not (rr.work or rr.education):

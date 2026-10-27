@@ -655,6 +655,8 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
     for step in range(max_steps):
         img = winenv.grab_window(rect)
         crop = img[band.y: band.y + band.h, band.x: band.x + band.w]
+        # 整屏也留一份：裁切区算错时用它兜底，且默认优先用整屏（实测更稳）
+        full = img
         res.shots.append((step, crop.copy()))
 
         try:
@@ -1204,14 +1206,18 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
 
     # ---------- 2. 连续截屏（页面不再移动就停） ----------
     crops: list = []
+    fulls: list = []
     prev = None
     for _ in range(max_screens):
         img = winenv.grab_window(rect)
         band = panel_band(img, wide)
         crop = img[band.y: band.y + band.h, band.x: band.x + band.w]
+        # 整屏也留一份：裁切区算错时用它兜底，且默认优先用整屏（实测更稳）
+        full = img
         if prev is not None and crop.shape == prev.shape and (crop == prev).all():
             break                       # 这一屏和上一屏完全相同 -> 到底了
         crops.append(crop.copy())
+        fulls.append(full.copy())
         prev = crop
         try:
             winenv.scroll_modal(-4, rect[0] + band.x + band.w // 2, rect[1] + band.y + band.h // 2)
@@ -1229,7 +1235,8 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     log(f"  OCR 分辨率: {zoom_cfg['max_image_side']}px（放大模式）")
     try:
         with ThreadPoolExecutor(max_workers=min(4, max(1, len(crops)))) as pool:
-            futures = [pool.submit(vlm.read_screen_text, c, zoom_cfg) for c in crops]
+            futures = [pool.submit(vlm.read_screen_text, c, zoom_cfg)
+                       for c in (fulls or crops)]
             for fut in futures:
                 try:
                     texts.append((fut.result() or {}).get("text", ""))
