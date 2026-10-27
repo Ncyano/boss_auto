@@ -661,8 +661,10 @@ def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
         try:
             cli = _cdp_client()
             before = cli.scroll_top()
-            got = cli.scroll_js(-clicks * 120)          # 先试页面内 JS 滚动
+            got = cli.scroll_js(-clicks * 120)          # ① 滚 documentElement
             if got != before:
+                return
+            if cli.scroll_in_container(int(x), int(y), -clicks * 120):   # ② 滚该点容器
                 return
             cli.wheel(x, y, -clicks * 120)              # 再试滚轮事件
             time.sleep(0.25)

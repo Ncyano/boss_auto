@@ -373,6 +373,45 @@ class CDP:
         self.last_scroll = info
         return int(info.get("moved") or 0)
 
+    def scroll_in_container(self, x: float, y: float, delta_y: int) -> int:
+        """在 (x,y) 所在的可滚动容器里滚（顶层 + iframe），返回实际位移。
+
+        列表是 iframe 里的虚拟滚动容器，滚 documentElement 未必生效。
+        """
+        js = (
+            "(() => {"
+            " const PX=__PX__, PY=__PY__, DY=__DY__;"
+            " const docs=[document];"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { if (f.contentDocument) docs.push(f.contentDocument); } catch(e) {} }"
+            " for (const d of docs) {"
+            "   const W=(d.defaultView||window);"
+            "   let el=null;"
+            "   try { el=d.elementFromPoint(PX, PY); } catch(e) {}"
+            "   let node=el;"
+            "   while (node) {"
+            "     const cs=W.getComputedStyle(node);"
+            "     if ((cs.overflowY==='auto'||cs.overflowY==='scroll')"
+            "         && node.scrollHeight > node.clientHeight + 20) {"
+            "       const b=node.scrollTop; node.scrollTop=b+DY;"
+            "       const m=Math.round(node.scrollTop-b);"
+            "       if (m) return JSON.stringify({moved:m, top:Math.round(node.scrollTop),"
+            "         cls:(node.className||'').toString().slice(0,30)});"
+            "     }"
+            "     node=node.parentElement;"
+            "   }"
+            " }"
+            " return JSON.stringify({moved:0});"
+            "})()"
+        ).replace("__PX__", str(int(x))).replace("__PY__", str(int(y)))          .replace("__DY__", str(int(delta_y)))
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        try:
+            info = json.loads(res["result"].get("value") or "{}")
+        except Exception:
+            return 0
+        self.last_scroll = info
+        return int(info.get("moved") or 0)
+
     def scroll_js(self, delta_y: int) -> int:
         """用 JS 直接滚页面（含 iframe 里的推荐列表），完全不产生鼠标事件。
 

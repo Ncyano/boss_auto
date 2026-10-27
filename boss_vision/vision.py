@@ -176,8 +176,14 @@ def _load_icon_template():
     if _icon_template is None:
         try:
             import cv2
+            import numpy as _np
 
-            _icon_template = cv2.imread(str(ICON_TEMPLATE_PATH))
+            # cv2.imread 不支持中文路径（打包目录含中文就全失效）-> 用 fromfile+imdecode
+            try:
+                _buf = _np.fromfile(str(ICON_TEMPLATE_PATH), dtype=_np.uint8)
+                _icon_template = cv2.imdecode(_buf, cv2.IMREAD_COLOR) if _buf.size else None
+            except Exception:
+                _icon_template = cv2.imread(str(ICON_TEMPLATE_PATH))
         except Exception:
             _icon_template = False
     return None if _icon_template is False else _icon_template
