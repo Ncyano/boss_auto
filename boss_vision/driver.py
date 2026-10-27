@@ -870,6 +870,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                                 if _richness(rr2) > _richness(best):
                                     print(f"     补读结果更好，采用（工作 {len(rr2.work)} 条 / "
                                           f"教育 {len(rr2.education)} 条 / 缺失 {len(rr2.missing)} 项）")
+                                    _merge_basic(rr2, best)
                                     best = rr2
                                 else:
                                     print(f"     补读未改善（缺失 {len(rr2.missing)} 项），保留原结果")
@@ -908,6 +909,14 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                         except Exception as exc:
                             print(f"     [warn] 重读失败：{exc}")
                             break
+                    def _merge_basic(dst, src) -> None:
+                        """补读结果若缺字段（年龄等），用之前的结果补上。"""
+                        db = getattr(dst, "basic", None) or {}
+                        for k, v in (getattr(src, "basic", None) or {}).items():
+                            if v and not db.get(k):
+                                db[k] = v
+                        dst.basic = db
+
                     rr = best
                     # 简历明明开着，却一条经历都没读到：多半是截图/OCR 偶发失败
                     # （页面还没渲染完、裁切到空白区）。重读一次；还空就跳过，别判"不合适"。

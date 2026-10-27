@@ -465,7 +465,7 @@ def evaluate(resume: dict, kb: dict | None = None, schools_lookup=None) -> dict:
         else:
             advisories.append(f"年龄 {age_int}（未超上限 {age_max}）")
     else:
-        reviews.append("年龄未识别，无法执行 A01 年龄上限（未知不等于通过）")
+        advisories.append("年龄未识别，A01 年龄上限未核对（不阻断判定）")
 
     gap = resume.get("gap_months")
     gap_max = params_of(kb, "P02").get("max_gap_months", 6)
