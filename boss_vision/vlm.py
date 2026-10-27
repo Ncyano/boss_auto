@@ -520,7 +520,14 @@ OCR_DEFAULT_MODEL = "qwen-vl-ocr"
 
 
 def ocr_model(cfg: dict | None = None) -> str:
+    """OCR 用的模型名。
+
+    qwen 走专用 OCR 模型（qwen-vl-ocr）；
+    其他 provider（如 deepseek）没有单独的 OCR 模型，直接用 cfg["model"]。
+    """
     cfg = cfg or load_config()
+    if str(cfg.get("provider") or "qwen").lower() != "qwen":
+        return cfg.get("model") or OCR_DEFAULT_MODEL
     return cfg.get("ocr_model") or OCR_DEFAULT_MODEL
 
 

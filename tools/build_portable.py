@@ -123,6 +123,12 @@ def main() -> int:
         src = REPO / f
         if src.exists():
             shutil.copy2(src, app / f)
+    # 学校名单（判定硬规则依赖，缺了会把所有人判成"不在名单"）
+    data_src = REPO / "data"
+    if data_src.exists():
+        (app / "data").mkdir(parents=True, exist_ok=True)
+        for f in data_src.glob("schools*"):
+            shutil.copy2(f, app / "data" / f.name)
     ex = REPO / "config.example.json"
     if ex.exists():
         shutil.copy2(ex, app / "config.json")      # 模板，不含真实密钥
