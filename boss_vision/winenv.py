@@ -245,7 +245,9 @@ def reset_cdp_scroll() -> None:
 
 
 def _cdp_mode() -> bool:
-    """config.input.mode == "cdp" 且调试端口在线时，走无鼠标路径。"""
+    """config.input.mode == "cdp"（或已切到 CDP 抓图）且调试端口在线时，走无鼠标路径。"""
+    if _CAPTURE_MODE[0] == "cdp":
+        return True          # 后台模式：截图都靠 CDP 了，输入也必须走 CDP
     try:
         import settings
         cfg = settings.load()

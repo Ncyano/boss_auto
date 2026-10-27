@@ -26,5 +26,8 @@
   "paths": {
     "data_dir": "data",
     "kb_dir": "运营助理知识库_v0.1"
+  },
+  "input": {
+    "mode": "cdp"
   }
 }
