@@ -289,6 +289,27 @@ STRUCTURE_PROMPT = """你是简历解析器。输入是一份简历截图 OCR �
 """
 
 
+def struct_config() -> dict:
+    """结构化用的模型配置。
+
+    优先用 config.json 里的 "struct" 段（例如 qwen3-vl-plus 做结构化）；
+    没配就退回 judge 段（deepseek），保持向后兼容。
+    """
+    base = load_config()
+    try:
+        import settings
+        cfg = settings.load()
+        st = (cfg.get("struct") or {}) if isinstance(cfg, dict) else {}
+        if st:
+            merged = dict(base)
+            merged.update(st)
+            merged.setdefault("api_key_env", "VLM_API_KEY")
+            return merged
+    except Exception:
+        pass
+    return base
+
+
 def structure_text(text: str, cfg: dict | None = None, kb: dict | None = None) -> dict:
     """把 OCR 出来的纯文本解析成结构化简历（用文本模型，约 1~2 秒）。"""
     cfg = cfg or load_config()

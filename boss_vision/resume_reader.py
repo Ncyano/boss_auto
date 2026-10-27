@@ -665,7 +665,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                 otext = ocr_res.get("text") or ""
                 try:
                     import judge as _judge
-                    st = _judge.structure_text(otext, _judge.load_config())
+                    st = _judge.structure_text(otext, _judge.struct_config())
                     sdata = st.get("data") or {}
                     try:
                         merged_usage = _merge_usage(ocr_res.get("usage"), st.get("usage"))
@@ -851,7 +851,7 @@ def read_resume_vlm(rect, wide, log=print, max_steps: int = 10,
                     if str(cfg.get("pipeline") or "vlm").lower() == "ocr":
                         otext0 = (vlm.read_screen_text(crop0, zoom_cfg0, log=log) or {}).get("text", "")
                         import judge as _j0
-                        sdata0 = (_j0.structure_text(otext0, _j0.load_config()) or {}).get("data") or {}
+                        sdata0 = (_j0.structure_text(otext0, _j0.struct_config()) or {}).get("data") or {}
                         parts0 = {"work": [], "education": sdata0.get("sections") or []}
                         parts0 = vlm.normalize(sdata0.get("sections"))
                     else:
@@ -1249,7 +1249,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     # ---------- 4. 一次性结构化 ----------
     data = {}
     try:
-        st = judge.structure_text(full_text, judge.load_config())
+        st = judge.structure_text(full_text, judge.struct_config())
         data = (st or {}).get("data") or {}
     except Exception as exc:
         log(f"  [warn] 结构化失败：{exc}")
@@ -1355,7 +1355,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
             otext_b = (vlm.read_screen_text(crop_b, cfg) or {}).get("text", "")
             if otext_b:
                 texts.append(otext_b)
-                st_b = judge.structure_text(otext_b, judge.load_config())
+                st_b = judge.structure_text(otext_b, judge.struct_config())
                 parts_b = vlm.normalize((st_b or {}).get("data", {}).get("sections"))
                 if parts_b.get("education"):
                     res.education = parts_b["education"]
@@ -1392,7 +1392,7 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
             zoom["max_image_side"] = int(cfg.get("max_image_side", 1024)) * 2
             otext = (vlm.read_screen_text(edu_crop, zoom, log=log) or {}).get("text", "")
             if otext:
-                st2 = judge.structure_text(otext, judge.load_config())
+                st2 = judge.structure_text(otext, judge.struct_config())
                 parts2 = vlm.normalize((st2 or {}).get("data", {}).get("sections"))
                 if parts2.get("education"):
                     vlm.merge_screens(res.education, parts2["education"])
