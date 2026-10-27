@@ -53,6 +53,9 @@ def load_config(create: bool = True) -> dict:
 
 
 def api_key(cfg: dict | None = None) -> str:
+    # 调用方显式传了 key（比如拿另一种 provider 做对比）就优先用它
+    if cfg and cfg.get("api_key"):
+        return str(cfg["api_key"])
     cfg = cfg or load_config()
     try:
         import settings
