@@ -609,6 +609,15 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 time.sleep(3.0)
                 continue
 
+        if p["state"] != "resume_modal":
+            try:
+                if winenv.modal_open_dom():
+                    p["state"] = "resume_modal"
+                    if not p.get("wides"):
+                        p["wides"] = []
+            except Exception:
+                pass
+
         if p["state"] == "resume_modal":
             if not live:
                 print("  当前停在简历弹窗：dry-run 不做任何事")
@@ -822,6 +831,13 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                         return False, pp
                     if pp["state"] == "resume_modal":
                         return True, pp
+                    # 视觉识别在部分弹窗布局下会判成 unknown，补一层 DOM 判定
+                    try:
+                        if winenv.modal_open_dom():
+                            pp["state"] = "resume_modal"
+                            return True, pp
+                    except Exception:
+                        pass
                     time.sleep(0.5)
                 return False, pp
 

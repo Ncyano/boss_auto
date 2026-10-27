@@ -331,6 +331,16 @@ def press_key(vk: int, hold: tuple[float, float] = (0.05, 0.12)) -> None:
     user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
 
 
+def modal_open_dom() -> bool:
+    """简历弹窗是否打开（DOM 判定，CDP 模式可用）。"""
+    if not _cdp_mode():
+        return False
+    try:
+        return _cdp_client().modal_open_dom()
+    except Exception:
+        reset_cdp()
+        return False
+
 def click_list_refresh() -> bool:
     """点列表底部的「刷新」按钮（BOSS 自带的换一批）。不移动鼠标。"""
     if not _cdp_mode():

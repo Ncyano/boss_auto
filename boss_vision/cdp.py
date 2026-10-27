@@ -440,6 +440,23 @@ class CDP:
         res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         return int(res["result"].get("value") or 0)
 
+    def modal_open_dom(self) -> bool:
+        """DOM 层面判断简历弹窗是否打开（比视觉识别稳）。"""
+        js = (
+            "(() => {"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { const d=f.contentDocument; if(!d) continue;"
+            "     const el=d.querySelector('[class*=resumeGreet]');"
+            "     if (el) { const r=el.getBoundingClientRect();"
+            "       if (r.width>0 && r.height>0) return true; }"
+            "   } catch(e) {} }"
+            " const el=document.querySelector('[class*=resumeGreet]');"
+            " if (el) { const r=el.getBoundingClientRect(); return r.width>0 && r.height>0; }"
+            " return false; })()"
+        )
+        res = self._call("Runtime.evaluate", {"expression": js, "returnByValue": True})
+        return bool(res["result"].get("value"))
+
     def greet_button_text(self) -> str:
         """返回弹窗里「打招呼/继续沟通」按钮当前的文字（找不到返回空串）。"""
         js = (
