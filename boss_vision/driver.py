@@ -410,6 +410,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             _we._CDP_CLIENT[0] = c
     except Exception:
         pass
+    blanks = 0                    # 连续"识别不到卡片"次数
     last_click_y = -9999          # 上一次点开的卡片 y，用于"从上往下"推进
     modal_open = [False]               # 当前是否有简历弹窗开着（统一清理用）
     handled = 0
@@ -622,13 +623,39 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
 
         if not p["cards"]:
             scrolls += 1
-            print("  没识别到卡片 -> 滚动")
+            blanks += 1
+            print(f"  没识别到卡片 -> 滚动（连续 {blanks} 次）")
             if not live:
                 break
+            # 可能是误点开了别的东西（弹窗遮住列表 / 页面跳到详情）
+            if p.get("state") == "unknown":
+                try:
+                    if winenv.press_escape():
+                        time.sleep(0.8)
+                    if winenv.close_dialog_by_js():
+                        time.sleep(0.8)
+                        print("     已尝试关闭意外弹出的层，重新截图")
+                        blanks = 0
+                        continue
+                except Exception:
+                    pass
+            if blanks >= 6:
+                print("  连续 6 次都识别不到卡片：刷新页面重来")
+                try:
+                    if winenv.refresh_page(hwnd):
+                        time.sleep(4.0)
+                        blanks = 0
+                        scrolls = 0
+                        continue
+                except Exception:
+                    pass
+                print("  刷新也失败 -> 停止（请检查浏览器是否停在推荐牛人页）")
+                return 3
             winenv.scroll(ox + rect[2] // 2, oy + rect[3] // 2, -3)
             time.sleep(0.9)
             continue
 
+        blanks = 0
         skipped = sum(1 for s in p["skip"] if s)
         if skipped:
             print(f"  跳过 {skipped} 张（文字淡化 / 有同事沟通进度图标 / 被截断 / 内嵌推荐块）")
