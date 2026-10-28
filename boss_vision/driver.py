@@ -305,6 +305,14 @@ def log_cards(p: dict) -> None:
               f"人像得分={score:>5.3f} -> {act}")
 
 
+def _ensure_utf8_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scroll",
         anchor: tuple[int, int] | None = None,
         max_refresh: int | None = None, min_gap: float = 3.0, max_gap: float = 5.0,
@@ -312,6 +320,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         max_attempts: int | None = None, allow_refresh: bool = False,
         block_text_scan: bool = False, reader: str = "auto",
         capture: str = "screen", url: str = "") -> int:
+    _ensure_utf8_stdio()
     winenv.enable_dpi_awareness()
     found = winenv.find_window("BOSS直聘")
     if not found and capture == "cdp":

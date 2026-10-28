@@ -53,6 +53,16 @@ GUI 顶部显示 `识别方式: OCR 链路  qwen-vl-ocr`。
 """
 
 
+LAUNCHER = (
+    "@echo off\r\n"
+    "chcp 65001 >nul\r\n"
+    'cd /d "%~dp0"\r\n'
+    "set PYTHONIOENCODING=utf-8\r\n"
+    'set "PATH=%~dp0python;%~dp0python\\Library\\bin;%~dp0python\\DLLs;%PATH%"\r\n'
+    'start "BOSS Collector Console" cmd /k ""%~dp0python\\python.exe" -E "%~dp0app\\boss_vision\\gui.py""\r\n'
+)
+
+
 def main() -> int:
     stamp = time.strftime("%m%d-%H%M")
     stage = REPO / "data" / "_patch_stage"
@@ -91,13 +101,16 @@ def main() -> int:
         "@echo off\r\n"
         "chcp 65001 >nul\r\n"
         'cd /d "%~dp0"\r\n'
-        "echo 正在启动（崩溃信息会写入 diag.txt）...\r\n"
+        "set PYTHONIOENCODING=utf-8\r\n"
+        "echo Starting in diagnostic mode (output -> diag.txt) ...\r\n"
         'set "PATH=%~dp0python;%~dp0python\\Library\\bin;%~dp0python\\DLLs;%PATH%"\r\n'
         '".\\python\\python.exe" -X faulthandler "app\\boss_vision\\gui.py" > diag.txt 2>&1\r\n'
         "echo.\r\n"
-        "echo 已退出。请把 diag.txt 发给开发，或看 runs\\crash.log\r\n"
+        "echo Exited. Please send diag.txt to the developer.\r\n"
         "pause\r\n",
         encoding="ascii")
+
+    (stage / "启动控制台.cmd").write_text(LAUNCHER, encoding="ascii")
 
     (stage / "补丁说明.md").write_text(README, encoding="utf-8")
 

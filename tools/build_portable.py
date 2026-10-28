@@ -138,6 +138,7 @@ def main() -> int:
         "@echo off\r\n"
         "chcp 65001 >nul\r\n"
         'cd /d "%~dp0"\r\n'
+        "set PYTHONIOENCODING=utf-8\r\n"
         'set "PATH=%~dp0python;%~dp0python\\Library\\bin;%~dp0python\\DLLs;%PATH%"\r\n'
         'start "BOSS Collector Console" cmd /k ""%~dp0python\\python.exe" -E "%~dp0app\\boss_vision\\gui.py""\r\n',
         encoding="ascii")

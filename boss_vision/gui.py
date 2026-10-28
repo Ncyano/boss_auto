@@ -246,7 +246,7 @@ class App:
 
         # 开跑前先体检权限：UIPI 拦截时点了也不动，提前说清楚
         ok, msg = check_injection_permission()
-        print(("✓ " if ok else "✗ ") + msg)
+        print(("[OK] " if ok else "[NG] ") + msg)
         if not ok and not messagebox.askyesno(
                 "权限可能不足",
                 msg + "\n\n建议：关闭本窗口，右键 run-gui.cmd → 以管理员身份运行。\n仍要继续吗？"):
@@ -328,7 +328,20 @@ def vision_window_missing() -> bool:
         return False
 
 
+def _ensure_utf8_stdio() -> None:
+    """控制台默认 GBK，打印 ✓/✗ 这类符号会抛 UnicodeEncodeError。
+
+    统一改成 utf-8 + errors=replace，任何字符都不会让程序中断。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main() -> int:
+    _ensure_utf8_stdio()
     root = tk.Tk()
     try:
         root.call("tk", "scaling", 1.25)
@@ -363,6 +376,7 @@ def _install_crash_log() -> None:
 
 if __name__ == "__main__":
     _install_crash_log()
+    _ensure_utf8_stdio()
     try:
         sys.exit(main())
     except SystemExit:
