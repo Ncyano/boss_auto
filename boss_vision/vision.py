@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -381,13 +382,26 @@ def guess_state(btns: list[Rect], wides: list[Rect]) -> str:
     return "unknown"
 
 
+LOCAL_OCR_ENABLED = os.environ.get("BOSS_LOCAL_OCR", "0") == "1"
+
+
 def load_ocr():
+    """加载本地 OCR（rapidocr/onnxruntime）。
+
+    默认**不加载**：onnxruntime 在没有 AVX2 的老 CPU 上导入会直接访问违例
+    （0xC0000005），Python 层无法捕获，会把整个程序带崩。
+    本地 OCR 只用于识别「热搜牛人推荐」这类块的标题，属可选功能，
+    云端 qwen-vl-ocr 才是主链路。
+    需要时设环境变量 BOSS_LOCAL_OCR=1 打开。
+    """
+    if not LOCAL_OCR_ENABLED:
+        return None
     try:
         from rapidocr_onnxruntime import RapidOCR
 
         return RapidOCR()
     except Exception as exc:
-        print(f"[warn] OCR 不可用：{exc}", file=sys.stderr)
+        print(f"[warn] 本地 OCR 不可用：{exc}", file=sys.stderr)
         return None
 
 

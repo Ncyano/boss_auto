@@ -110,10 +110,16 @@ def main() -> int:
     dstbin.mkdir(parents=True, exist_ok=True)
     for f in libbin.glob("*.dll"):
         shutil.copy2(f, dstbin / f.name)
-    for n in ("tcl86t.dll", "tk86t.dll"):
+    # 关键 DLL 直接放 python\ 根目录：这样直接运行 python.exe 也能找到，
+    # 不依赖启动脚本设置 PATH（目标机上曾因此报 0xC0000135）
+    ROOT_DLLS = ("tcl86t.dll", "tk86t.dll", "vcruntime140.dll", "vcruntime140_1.dll",
+                 "msvcp140.dll", "concrt140.dll", "ffi-8.dll", "libffi-8.dll",
+                 "libexpat.dll", "zlib.dll", "libssl-3-x64.dll", "libcrypto-3-x64.dll")
+    for n in ROOT_DLLS:
         src = libbin / n
         if src.exists():
             shutil.copy2(src, py / n)
+    print("  运行库 DLL 已复制到 python\\")
 
     # 5) 应用本体
     print("  复制应用 ...")
