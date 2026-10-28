@@ -65,8 +65,11 @@ def main() -> int:
         p2 = None
         for _ in range(8):
             p2 = driver.plan(winenv.grab_window(rect), True)
-            if p2["state"] == "resume_modal":
+            if p2["state"] == "resume_modal" or winenv.modal_open_dom():
                 opened = True
+                p2["state"] = "resume_modal"
+                if not p2.get("wides"):
+                    p2["wides"] = [driver.vision.Rect(0, 0, rect[2], rect[3])]
                 break
             time.sleep(0.5)
 
