@@ -1,0 +1,14 @@
+{
+  "source_page": "http://www.moe.gov.cn/jyb_xxgk/s5743/s5744/202606/t20260618_1441074.html",
+  "source_file": "http://www.moe.gov.cn/jyb_xxgk/s5743/s5744/202606/W020260618416094865984.xls",
+  "list_date": "2026-06-17",
+  "imported_at": "2026-10-21 12:18:51",
+  "source_sha256": "29c40f083b639888e429cf40b68f9a75782d1ce81131c99aabca65b65b36eaea",
+  "source_bytes": 464896,
+  "record_count": 2952,
+  "by_level": {
+    "本科": 1412,
+    "专科": 1540
+  },
+  "province_count": 31
+}

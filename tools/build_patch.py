@@ -87,6 +87,18 @@ def main() -> int:
     if rd.exists():
         shutil.copy2(rd, stage / "使用说明.md")
 
+    (stage / "诊断.cmd").write_text(
+        "@echo off\r\n"
+        "chcp 65001 >nul\r\n"
+        'cd /d "%~dp0"\r\n'
+        "echo 正在启动（崩溃信息会写入 diag.txt）...\r\n"
+        'set "PATH=%~dp0python;%~dp0python\\Library\\bin;%~dp0python\\DLLs;%PATH%"\r\n'
+        '".\\python\\python.exe" -X faulthandler "app\\boss_vision\\gui.py" > diag.txt 2>&1\r\n'
+        "echo.\r\n"
+        "echo 已退出。请把 diag.txt 发给开发，或看 runs\\crash.log\r\n"
+        "pause\r\n",
+        encoding="ascii")
+
     (stage / "补丁说明.md").write_text(README, encoding="utf-8")
 
     zpath = DIST / f"热更新-{stamp}.zip"
