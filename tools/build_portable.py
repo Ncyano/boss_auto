@@ -144,22 +144,46 @@ def main() -> int:
     edge = REPO / "run-edge-debug.cmd"
     if edge.exists():
         shutil.copy2(edge, out / "启动调试浏览器.cmd")
-    (out / "使用说明.md").write_text(
-        "# BOSS 招聘助手（免安装 Python）\n\n"
-        "## 首次使用\n"
-        "1. 编辑 `app\\config.json`，填两个 key：vision.api_key / judge.api_key\n"
-        "2. 双击 `启动调试浏览器.cmd`（带调试端口的 Edge），在里面登录 BOSS\n"
-        "3. 双击 `启动控制台.cmd`\n\n"
-        "## 每次运行\n"
-        "- 先 `启动调试浏览器.cmd`，再 `启动控制台.cmd`\n"
-        "- GUI 里勾「后台模式」→ 不碰鼠标，窗口可被遮挡\n"
-        "- 勾「刷新」→ 列表到底时自动点「刷新」换一批\n\n"
-        "## 检查调试端口\n"
-        "```\nTest-NetConnection 127.0.0.1 -Port 9222 -InformationLevel Quiet\n```\n"
-        "必须 True，否则先用 `启动调试浏览器.cmd` 启动浏览器。\n\n"
-        "## 结果\n"
-        "`app\\boss_vision\\runs\\<时间>-summary.csv`（含「已打招呼」列）\n",
-        encoding="utf-8")
+    readme = """# BOSS 招聘助手（免安装 Python）
+
+## 首次使用
+1. 编辑 `app\\config.json`，填两个 key：vision.api_key / judge.api_key
+2. 双击 `启动调试浏览器.cmd`（带调试端口 + 防遮挡节流），在里面登录 BOSS
+3. 双击 `启动控制台.cmd`
+
+## 每次运行
+- 先 `启动调试浏览器.cmd`，再 `启动控制台.cmd`
+- GUI 里勾「后台模式」→ 不碰鼠标，窗口可被遮挡
+- 勾「刷新」→ 列表到底时自动点「刷新」换一批
+
+## ⚠ 后台模式的重要注意事项
+
+1. **可以「被别的窗口遮挡」，但不要「最小化」**
+   浏览器最小化后会停止渲染，截图会超时，读屏极慢甚至失败。
+   想干别的就把 BOSS 窗口拖到后面，或用第二个虚拟桌面。
+
+2. **浏览器必须用 `启动调试浏览器.cmd` 启动**
+   它带了这几个参数，没有它们后台读屏会很慢：
+   ```
+   --disable-backgrounding-occluded-windows
+   --disable-renderer-backgrounding
+   --disable-background-timer-throttling
+   --disable-features=CalculateNativeWinOcclusion
+   ```
+
+3. **验证调试端口**
+   ```
+   Test-NetConnection 127.0.0.1 -Port 9222 -InformationLevel Quiet
+   ```
+   必须返回 True。GUI 启动横幅要出现 `抓图模式: CDP`。
+
+4. **验证后台速度**（可选）
+   被遮挡时应仍在 200~400ms 一张；如果超过 1 秒，检查上面的启动参数是否生效。
+
+## 结果
+`app\\boss_vision\\runs\\<时间>-summary.csv`（含「已打招呼」列）
+"""
+    (out / "使用说明.md").write_text(readme, encoding="utf-8")
 
     # 7) 自检
     print("  自检 ...")

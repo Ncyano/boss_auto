@@ -80,6 +80,13 @@ def main() -> int:
             shutil.copy2(f, stage / "app" / "data" / f.name)
             count += 1
 
+    edge = REPO / "run-edge-debug.cmd"
+    if edge.exists():
+        shutil.copy2(edge, stage / "启动调试浏览器.cmd")
+    rd = REPO / "使用说明.md"
+    if rd.exists():
+        shutil.copy2(rd, stage / "使用说明.md")
+
     (stage / "补丁说明.md").write_text(README, encoding="utf-8")
 
     zpath = DIST / f"热更新-{stamp}.zip"
