@@ -340,7 +340,7 @@ def main() -> int:
 
 
 def _install_crash_log() -> None:
-    """把未捕获异常 / 进程崩溃写到 runs\crash.log，方便现场排查闪退。"""
+    """把未捕获异常 / 进程崩溃写到 runs/crash.log，方便现场排查闪退。"""
     import faulthandler
     from datetime import datetime
     try:
