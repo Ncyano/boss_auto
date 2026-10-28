@@ -339,5 +339,46 @@ def main() -> int:
     return 0
 
 
+def _install_crash_log() -> None:
+    """把未捕获异常 / 进程崩溃写到 runs\crash.log，方便现场排查闪退。"""
+    import faulthandler
+    from datetime import datetime
+    try:
+        runs = _HERE / "runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        fh = open(runs / "crash.log", "a", encoding="utf-8", buffering=1)
+        fh.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 启动 =====\n")
+        faulthandler.enable(file=fh, all_threads=True)
+
+        def _hook(exc_type, exc, tb):
+            import traceback
+            fh.write(f"\n[未捕获异常] {exc_type.__name__}: {exc}\n")
+            traceback.print_exception(exc_type, exc, tb, file=fh)
+            fh.flush()
+            traceback.print_exception(exc_type, exc, tb, file=sys.__stderr__)
+        sys.excepthook = _hook
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    _install_crash_log()
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException as exc:
+        import traceback
+        from datetime import datetime
+        try:
+            runs = _HERE / "runs"
+            runs.mkdir(parents=True, exist_ok=True)
+            with open(runs / "crash.log", "a", encoding="utf-8") as fh:
+                fh.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 崩溃 =====\n")
+                fh.write(f"{type(exc).__name__}: {exc}\n")
+                traceback.print_exc(file=fh)
+        except Exception:
+            pass
+        traceback.print_exc()
+        input("\n按回车退出…")
+        raise
