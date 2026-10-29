@@ -313,6 +313,20 @@ def _ensure_utf8_stdio() -> None:
             pass
 
 
+def _out_dir():
+    """结果目录：带岗位就落到 runs/<岗位>/，否则保持 runs/。"""
+    try:
+        import kb as _kb
+        name = (_kb.current_position() or "").strip()
+        if name and name != (_kb.positions().get("active") or ""):
+            d = OUT / name
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+    except Exception:
+        pass
+    return OUT
+
+
 def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scroll",
         anchor: tuple[int, int] | None = None,
         max_refresh: int | None = None, min_gap: float = 3.0, max_gap: float = 5.0,
@@ -494,7 +508,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             except Exception:
                 rows = [export_csv.row_of(rec) for rec in results]
             rows = export_csv.dedupe_rows(rows)      # 同一人只留一条
-            export_csv.write_csv(OUT / f"{stamps}-summary.csv", rows)
+            export_csv.write_csv(_out_dir() / f"{stamps}-summary.csv", rows)
             export_csv.merge_into_daily(OUT, rows)   # 当天那张表：按日期命名并累计
         except Exception as exc:
             print(f"[warn] CSV 生成失败：{exc}")

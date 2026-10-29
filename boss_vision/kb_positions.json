@@ -1,0 +1,24 @@
+{
+  "active": "运营助理",
+  "positions": [
+    {
+      "name": "运营助理",
+      "status": "ready",
+      "kb": null,
+      "note": "当前生效知识库，规则与判定逻辑均沿用现有实现"
+    },
+    {
+      "name": "运营主管",
+      "status": "placeholder",
+      "kb": null,
+      "note": "待人事提供标准后启用；未启用时回退到运营助理规则"
+    },
+    {
+      "name": "人事专员",
+      "status": "placeholder",
+      "kb": null,
+      "note": "待人事提供标准后启用；未启用时回退到运营助理规则"
+    }
+  ],
+  "result_dir_template": "runs/{position}"
+}

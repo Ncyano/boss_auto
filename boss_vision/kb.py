@@ -645,3 +645,69 @@ def self_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(self_test())
+
+POSITIONS_FILE = Path(__file__).with_name("kb_positions.json")
+
+
+def positions() -> dict:
+    """读取岗位占位表：{active, positions:[{name,status,kb,note}], ...}"""
+    try:
+        return json.loads(POSITIONS_FILE.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {"active": "运营助理", "positions": [{"name": "运营助理", "status": "ready"}]}
+
+
+def position_names() -> list[str]:
+    return [p.get("name") for p in positions().get("positions", []) if p.get("name")]
+
+
+def load_position(name: str | None = None) -> tuple[str, dict]:
+    """按岗位名加载知识库。
+
+    占位岗位（status=placeholder）没有独立库时，回退到 active 岗位的规则，
+    保证新增岗位不会打断现有判定。
+    """
+    meta = positions()
+    names = {p.get("name"): p for p in meta.get("positions", [])}
+    target = name or meta.get("active") or "运营助理"
+    info = names.get(target) or {}
+    if info.get("status") == "ready" and info.get("kb"):
+        path = Path(__file__).with_name(info["kb"])
+        if path.exists():
+            return target, json.loads(path.read_text(encoding="utf-8-sig"))
+    active = meta.get("active") or "运营助理"
+    active_info = names.get(active) or {}
+    kb_file = active_info.get("kb") or "kb.json"
+    path = Path(__file__).with_name(kb_file)
+    if path.exists():
+        return target, json.loads(path.read_text(encoding="utf-8-sig"))
+    # 还没有独立文件：直接复用内置规则（load() 的实现）
+    return target, _ORIG_LOAD()
+
+# ---------------- 岗位切换 ----------------
+
+_ORIG_LOAD = load
+_ACTIVE = {"name": None}
+
+
+def set_position(name: str | None) -> str:
+    """设置当前招聘岗位（None = 回到默认 active）。"""
+    _ACTIVE["name"] = name or None
+    return current_position()
+
+
+def current_position() -> str:
+    return _ACTIVE["name"] or positions().get("active") or "运营助理"
+
+
+def load(path=None):
+    """带岗位感知的 load：有当前岗位就取该岗位的库，否则用默认。"""
+    name = _ACTIVE["name"]
+    if name:
+        try:
+            _, data = load_position(name)
+            if data:
+                return data
+        except Exception:
+            pass
+    return _ORIG_LOAD(path)

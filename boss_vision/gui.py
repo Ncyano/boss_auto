@@ -63,6 +63,13 @@ class App:
         top.pack(fill="x", padx=10, pady=(10, 6))
 
         self.var_limit = tk.IntVar(value=20)
+        try:
+            import kb as _kb
+            self.position_names = _kb.position_names()
+            self.var_position = tk.StringVar(value=_kb.current_position())
+        except Exception:
+            self.position_names = ["运营助理"]
+            self.var_position = tk.StringVar(value="运营助理")
         self.var_url = tk.StringVar(value="")
         self.var_background = tk.BooleanVar(value=True)   # 默认后台模式（CDP 截图，不碰鼠标）
         # 滚动屏数 / 刷新次数不再暴露在界面，用固定默认值（12 屏、3 次）
@@ -105,6 +112,16 @@ class App:
             _reader_text = f"识别方式读取失败：{exc}"
         status = ttk.Label(top, text=f"识别方式：{_reader_text}", foreground="#0a6")
         status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        pos_row = ttk.Frame(top)
+        pos_row.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        ttk.Label(pos_row, text="招聘岗位").pack(side="left")
+        pos_box = ttk.Combobox(pos_row, textvariable=self.var_position, width=12,
+                               values=self.position_names, state="readonly")
+        pos_box.pack(side="left", padx=6)
+        pos_box.bind("<<ComboboxSelected>>", self._on_position_change)
+        self.lbl_position = ttk.Label(pos_row, text="", foreground="#0a6")
+        self.lbl_position.pack(side="left", padx=6)
 
         add_row(1, "打招呼目标", ttk.Spinbox(top, from_=1, to=500, textvariable=self.var_limit, width=8),
                 "（只有打招呼成功的才算一次）")
@@ -217,6 +234,15 @@ class App:
             self.root.after(500, self.pump)
 
     # ---------- 动作 ----------
+    def _on_position_change(self, _evt=None) -> None:
+        import kb as _kb
+        name = self.var_position.get()
+        _kb.set_position(name)
+        cnt = len((_kb.load() or {}).get("rules") or [])
+        if hasattr(self, "lbl_position"):
+            self.lbl_position.configure(text=f"已切换（规则 {cnt} 条）")
+        print(f"[岗位] 切换到「{name}」，规则 {cnt} 条")
+
     def on_start(self) -> None:
         if self.worker and self.worker.is_alive():
             return
@@ -242,6 +268,12 @@ class App:
         self.text.delete("1.0", "end")
         self.text.configure(state="disabled")
 
+        try:
+            import kb as _kb
+            _kb.set_position(self.var_position.get() if hasattr(self, "var_position") else None)
+            print(f"[岗位] 当前招聘岗位：{_kb.current_position()}")
+        except Exception:
+            pass
         driver.reset_control()
 
         # 开跑前先体检权限：UIPI 拦截时点了也不动，提前说清楚
