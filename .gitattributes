@@ -1,0 +1,4 @@
+*.sh      text eol=lf
+*.command text eol=lf
+*.py      text eol=crlf
+*.cmd     text eol=crlf
