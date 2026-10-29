@@ -21,6 +21,9 @@ import struct
 import time
 import urllib.request
 
+# 本机 CDP 端口探测必须绕过系统代理（HTTP_PROXY 会劫持 127.0.0.1 请求）
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 DEFAULT_PORT = int(os.environ.get("CDP_PORT", "9222"))
 
 
@@ -136,7 +139,7 @@ class CDP:
     # ---------- 发现页签 ----------
     def _page_ws_url(self, page_match: str = "") -> str:
         url = f"http://127.0.0.1:{self.port}/json"
-        with urllib.request.urlopen(url, timeout=5) as resp:
+        with _NO_PROXY_OPENER.open(url, timeout=5) as resp:
             targets = json.loads(resp.read().decode())
         pages = [t for t in targets if t.get("type") == "page"]
         if not pages:
@@ -696,7 +699,7 @@ def list_at_bottom() -> bool:
 
 def available(port: int = DEFAULT_PORT) -> bool:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2):
+        with _NO_PROXY_OPENER.open(f"http://127.0.0.1:{port}/json/version", timeout=2):
             return True
     except Exception:
         return False

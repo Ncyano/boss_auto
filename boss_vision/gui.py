@@ -64,7 +64,7 @@ class App:
 
         self.var_limit = tk.IntVar(value=20)
         self.var_url = tk.StringVar(value="")
-        self.var_background = tk.BooleanVar(value=False)
+        self.var_background = tk.BooleanVar(value=True)   # 默认后台模式（CDP 截图，不碰鼠标）
         # 滚动屏数 / 刷新次数不再暴露在界面，用固定默认值（12 屏、3 次）
         self.var_scroll = tk.IntVar(value=12)
         self.var_refresh = tk.IntVar(value=3)

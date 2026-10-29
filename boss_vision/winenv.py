@@ -126,10 +126,11 @@ def launch_debug_browser(url: str = "", port: int = 9222, wait: float = 25.0) ->
         return False
 
     import urllib.request
+    _no_proxy = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = _t.time() + wait
     while _t.time() < deadline:
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1.5):
+            with _no_proxy.open(f"http://127.0.0.1:{port}/json/version", timeout=1.5):
                 reset_cdp()
                 return True
         except Exception:
