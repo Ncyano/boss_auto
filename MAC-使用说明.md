@@ -18,7 +18,7 @@
 - 点击通过 CDP 的 `Input.dispatchMouseEvent` 派发，**不会移动你的真实鼠标**
 - 浏览器窗口**不能被最小化**（最小化后 Chromium 停止渲染，截图会超时）
 
-## 2. 安装（一次性）
+## 2. 安装（一次性，离线）
 
 ```bash
 cd BOSS招聘助手-macOS源码-<时间>
@@ -26,12 +26,32 @@ chmod +x install-mac.sh run-mac.command run-browser-mac.command
 ./install-mac.sh
 ```
 
+**依赖已打包在 `wheelhouse/` 里，安装全程不需要联网**：
+
+```
+wheelhouse/
+├── arm64/     Apple Silicon（M1/M2/M3/M4）
+│   ├── numpy-2.5.4-cp313-cp313-macosx_11_0_arm64.whl
+│   ├── opencv_python-4.14.0.94-cp37-abi3-macosx_13_0_arm64.whl
+│   ├── pillow-13.0.0-cp313-cp313-macosx_11_0_arm64.whl
+│   ├── openpyxl-3.1.5-py2.py3-none-any.whl
+│   └── et_xmlfile-2.0.0-py3-none-any.whl
+└── x86_64/    Intel Mac
+    └── （同上，x86_64 版本）
+```
+
 脚本会：
 
-1. 检查 `python3`（需 3.10+，没有则提示安装）
-2. 创建 `.venv`
-3. 用清华镜像安装 `numpy / opencv-python / pillow / openpyxl`
-4. 跑一次自检
+1. 检查 `python3`（需 3.10+）
+2. 按 `uname -m` 自动选择 `arm64` / `x86_64` 目录
+3. 创建 `.venv`
+4. `pip install --no-index --find-links wheelhouse/<arch>` 离线安装
+5. 自检 numpy / cv2 / PIL / openpyxl / cdp
+
+> 注意：wheel 是按 **CPython 3.13** 编的。如果你的 python3 是 3.11 或 3.12，
+> pip 会报「找不到匹配版本」。解决办法：
+> - 装 Python 3.13（推荐），或
+> - 联网安装：`./.venv/bin/pip install numpy opencv-python pillow openpyxl`
 
 如果提示「未找到 python3」：
 
