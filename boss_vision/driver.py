@@ -60,9 +60,12 @@ SECTION_END = ("项目经历", "资格证书", "求职意向", "自我评价", "
 class _TeeStream:
     """把输出同时写到原流和日志文件；任一侧失败都不影响另一侧。"""
 
+    _orig = None
+
     def __init__(self, first, log_file):
         self.first = first
         self.log_file = log_file
+        self._orig = first      # 供 _restore_stdio 恢复用
 
     def write(self, s):
         for target in (self.first, self.log_file):
@@ -327,14 +330,27 @@ def _out_dir():
     return OUT
 
 
+def _restore_stdio() -> None:
+    """恢复被 _TeeStream 替换的 stdout/stderr（进程内被别的调用方共用时尤其重要）。"""
+    for name in ("stdout", "stderr"):
+        cur = getattr(sys, name, None)
+        orig = getattr(cur, "_orig", None) if cur is not None else None
+        if orig is not None:
+            setattr(sys, name, orig)
+
+
 def run(*args, **kwargs) -> int:
-    """对外入口：保证岗位锁一定释放（异常/提前返回都不泄漏）。"""
+    """对外入口：保证岗位锁释放 + 控制台流恢复（异常/提前返回都不泄漏）。"""
     try:
         return _run_impl(*args, **kwargs)
     finally:
         try:
             import kb as _kb
             _kb.unlock_position()
+        except Exception:
+            pass
+        try:
+            _restore_stdio()
         except Exception:
             pass
 
