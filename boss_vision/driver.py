@@ -327,7 +327,18 @@ def _out_dir():
     return OUT
 
 
-def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scroll",
+def run(*args, **kwargs) -> int:
+    """对外入口：保证岗位锁一定释放（异常/提前返回都不泄漏）。"""
+    try:
+        return _run_impl(*args, **kwargs)
+    finally:
+        try:
+            import kb as _kb
+            _kb.unlock_position()
+        except Exception:
+            pass
+
+def _run_impl(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scroll",
         anchor: tuple[int, int] | None = None,
         max_refresh: int | None = None, min_gap: float = 3.0, max_gap: float = 5.0,
         icon_check: bool = True, count_valid: bool = False,
@@ -569,19 +580,24 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             time.sleep(3.0)
             return False
         h2, r2, t2 = refound
+        # 先丢弃 winenv 里缓存的旧客户端，否则后续点击仍用旧坐标
+        try:
+            winenv.reset_cdp()
+        except Exception:
+            pass
         try:
             import cdp as _cdpm3
-            if _cdpm3.available():
-                _c3 = _cdpm3.CDP()
-                _c3.set_window_rect(r2)
-                _c3.close()
+            _cdpm3.bind_window_title(t2)      # 让新建连接绑定到同一个页签
         except Exception:
             pass
+        # 用「将来真正点击时用的那个客户端」设置窗口矩形，标定才落到实处
         try:
-            import cdp as _cdpm4
-            _cdpm4.bind_window_title(t2)
-        except Exception:
-            pass
+            _live = winenv._cdp_client()
+            _live.set_window_rect(r2)
+        except Exception as exc:
+            # 标定失败不能清标志：保留 _NEED_REBASE，下一轮继续重试
+            print(f"  [warn] 重新标定失败（{exc}），保留重标定标志")
+            return False
         winenv._NEED_REBASE[0] = False        # 确认成功后才清标志
         print(f"  已重新标定：窗口 {t2[:20]} 原点 ({r2[0]},{r2[1]})，抓图={winenv.capture_mode()}")
         return (h2, r2, t2)
@@ -1143,7 +1159,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
                 def _similar(a: str, b: str) -> bool:
                     """姓名差一个字、学校/公司相同也算同一人。"""
                     if not a or not b:
-                        return a == b
+                        return False        # 任一侧为空都不算同一个人
                     if a == b:
                         return True
                     if abs(len(a) - len(b)) > 1:
@@ -1153,8 +1169,10 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
 
                 _dup_of = None
                 for _old in _seen_people:
-                    if _similar(fingerprint[0], _old[0]) and (
-                            fingerprint[1] == _old[1] or fingerprint[2] == _old[2]):
+                    # 空字符串不算「相同」，否则两个采集不全的人会被误判重复
+                    same_school = bool(fingerprint[1]) and fingerprint[1] == _old[1]
+                    same_company = bool(fingerprint[2]) and fingerprint[2] == _old[2]
+                    if _similar(fingerprint[0], _old[0]) and (same_school or same_company):
                         _dup_of = _old
                         break
 
@@ -1255,6 +1273,7 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         # 处理完一个就回到循环顶部重新截图、重新判定（不再沿用旧坐标）
         continue
 
+    dump_results(with_csv=True)        # 正常结束立刻生成 summary.csv（不依赖 atexit）
     (OUT / f"{stamps}-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     PROGRESS.update({"handled": handled, "valid": valid,
                      "state": "stopped" if STOP else "done"})

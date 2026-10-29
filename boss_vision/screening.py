@@ -541,19 +541,21 @@ def _judge_work(row: dict) -> dict | None:
         if not _judge.available():
             return None
         # 用过滤后的文本：酒店前台/人力资源/会计等整段已被排除，
-        # 否则模型会把"酒店前台客诉处理"当成客户沟通经验
+        # 否则模型会把"酒店前台客诉处理"当成客户沟通经验。
         text = work_text(row).strip()
+
+        # 关键区分：
+        #   A) 压根没有结构化字段  -> 可以用「原文全文」兜底
+        #   B) 有结构化字段但全被排除 -> 不能回退，否则排除规则失效
+        has_struct = any(
+            (row.get(f"第{i}家职位") or row.get(f"第{i}家公司") or "").strip()
+            for i in range(1, 31))
         if not text:
+            if has_struct:
+                # 全部经历都命中排除清单：按「无相关经历」处理，交给后续规则判死
+                print("  [work] 全部经历均被排除清单过滤，不回退到原文")
+                return None
             text = (row.get("工作经历全文") or row.get("全部工作经历") or "").strip()
-        if not text:
-            parts = []
-            for i in range(1, 11):
-                company = (row.get(f"第{i}家公司") or "").strip()
-                title = (row.get(f"第{i}家职位") or "").strip()
-                period = (row.get(f"第{i}家起止") or "").strip()
-                if company or title:
-                    parts.append(f"{period} {company}/{title}")
-            text = "\n".join(parts)
         if not text:
             return None
         import kb as _kb

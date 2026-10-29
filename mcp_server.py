@@ -24,6 +24,37 @@ REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO / "boss_vision"))
 
 SERVER_INFO = {"name": "boss-screening", "version": "1.0.0"}
+
+# 协议输出专用流：复制 stdout 的文件描述符，之后任何 print 都改走 stderr，
+# 这样采集线程里的日志绝不会混进 JSON-RPC 通道。
+_PROTO = None
+
+
+def _init_protocol_stream() -> None:
+    global _PROTO
+    import os
+    import sys as _sys
+    try:
+        _PROTO = os.fdopen(os.dup(1), "w", encoding="utf-8", newline="\n", buffering=1)
+    except Exception:
+        _PROTO = _sys.__stdout__
+    # 全局把 stdout 指到 stderr：driver 等模块的 print 全部落到 stderr
+    try:
+        _sys.stdout = _sys.stderr
+    except Exception:
+        pass
+
+
+def _emit(line: str) -> None:
+    """唯一允许写协议通道的入口。"""
+    global _PROTO
+    if _PROTO is None:
+        _init_protocol_stream()
+    try:
+        _PROTO.write(line + "\n")
+        _PROTO.flush()
+    except Exception:
+        pass
 PROTOCOL = "2024-11-05"
 
 
@@ -142,19 +173,18 @@ def tool_start_batch(args: dict) -> str:
     url = str(args.get("url") or "")
     allow_refresh = bool(args.get("allow_refresh", True))
     capture = str(args.get("capture") or "cdp")
+    position = str(args.get("position") or "") or None
 
     def _run() -> None:
-        # 关键：driver.run 全程使用 print()，而 MCP 的 stdout 是 JSON-RPC 通道。
-        # 在采集线程里把 stdout/stderr 全部改到 stderr，避免污染协议输出。
-        import contextlib
-        import sys as _sys
+        # stdout 已全局指向 stderr（见 _init_protocol_stream），
+        # driver.run 里的 print 不会污染 JSON-RPC 通道，无需再改流。
         try:
-            with contextlib.redirect_stdout(_sys.stderr):
-                driver.run(live=live, limit=limit, max_scrolls=None, read="scroll",
-                           anchor=(1250, 600), max_refresh=None,
-                           min_gap=min_gap, max_gap=max_gap, icon_check=True,
-                           count_valid=True, allow_refresh=allow_refresh,
-                           block_text_scan=False, capture=capture, url=url)
+            driver.run(live=live, limit=limit, max_scrolls=None, read="scroll",
+                       anchor=(1250, 600), max_refresh=None,
+                       min_gap=min_gap, max_gap=max_gap, icon_check=True,
+                       count_valid=True, allow_refresh=allow_refresh,
+                       block_text_scan=False, capture=capture, url=url,
+                       position=position)
         except Exception as exc:
             RUN["last_error"] = f"{type(exc).__name__}: {exc}"
 
@@ -472,6 +502,7 @@ TOOLS = [
                 "min_gap": {"type": "number", "description": "最小间隔秒数（默认 3）"},
                 "max_gap": {"type": "number", "description": "最大间隔秒数（默认 5）"},
                 "live": {"type": "boolean", "description": "true=真实点击，false=试运行"},
+                "position": {"type": "string", "description": "招聘岗位（必须是 ready 状态）"},
                 "capture": {"type": "string", "description": "cdp（后台）或 screen"},
                 "allow_refresh": {"type": "boolean", "description": "列表到底时是否刷新"},
                 "url": {"type": "string", "description": "可选，开始前先打开的网址"},
@@ -580,7 +611,8 @@ def handle(msg: dict) -> str | None:
 
 
 def serve() -> int:
-    _log("MCP 服务已启动（stdio）")
+    _init_protocol_stream()
+    _log("MCP 服务已启动（stdio，协议走专用流）")
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -588,11 +620,11 @@ def serve() -> int:
         try:
             msg = json.loads(line)
         except Exception:
-            print(reply(None, error={"code": -32700, "message": "JSON 解析失败"}), flush=True)
+            _emit(reply(None, error={"code": -32700, "message": "JSON 解析失败"}))
             continue
         out = handle(msg)
         if out:
-            print(out, flush=True)
+            _emit(out)
     return 0
 
 
