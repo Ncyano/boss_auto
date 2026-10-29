@@ -60,14 +60,17 @@ class App:
         self._init_style(root)
 
         # ---------- 顶部标题 ----------
-        head = ttk.Frame(root)
-        head.pack(fill="x", padx=16, pady=(14, 4))
-        ttk.Label(head, text="BOSS 自动开简历", style="Title.TLabel").pack(side="left")
-        ttk.Label(head, text="  后台模式 · 自动读简历 · 判定后打招呼",
-                  style="Sub.TLabel").pack(side="left", pady=(6, 0))
+        head = tk.Frame(root, bg="#1e2430")
+        head.pack(fill="x")
+        tk.Label(head, text="  BOSS 自动开简历", bg="#1e2430", fg="#ffffff",
+                 font=("Microsoft YaHei UI", 15, "bold")).pack(side="left", pady=12)
+        tk.Label(head, text="后台模式 · 自动读简历 · 判定后打招呼   ",
+                 bg="#1e2430", fg="#8fa2b8",
+                 font=("Microsoft YaHei UI", 9)).pack(side="left", pady=(16, 0))
 
         # ---------- 参数区 ----------
-        top = ttk.LabelFrame(root, text="  运行参数  ", padding=(14, 12))
+        top = ttk.LabelFrame(root, text="  运行参数  ", style="Card.TLabelframe",
+                             padding=(16, 14))
         top.pack(fill="x", padx=16, pady=(6, 8))
 
         self.var_limit = tk.IntVar(value=20)
@@ -92,10 +95,12 @@ class App:
 
         def add_row(r: int, label: str, widget, hint: str = "") -> None:
             if label:
-                ttk.Label(top, text=label).grid(row=r, column=0, sticky="w", padx=(0, 6), pady=3)
+                ttk.Label(top, text=label, style="Card.TLabel").grid(row=r, column=0,
+                    sticky="w", padx=(0, 10), pady=5)
             widget.grid(row=r, column=1, sticky="w", pady=3)
             if hint:
-                ttk.Label(top, text=hint).grid(row=r, column=2, sticky="w", padx=8)
+                ttk.Label(top, text=hint, style="CardMuted.TLabel").grid(row=r, column=2,
+                    sticky="w", padx=10)
 
         # 识别方式在开跑前就显示出来：按 config 里的 pipeline 显示真实链路
         try:
@@ -118,7 +123,8 @@ class App:
                 _reader_text = f"视觉模型  {_cfg.get('model')}（较慢，约 16~20 秒/屏）"
         except Exception as exc:
             _reader_text = f"识别方式读取失败：{exc}"
-        status = ttk.Label(top, text=f"识别方式：{_reader_text}", foreground="#0a6")
+        status = ttk.Label(top, text=f"● {_reader_text}", style="Card.TLabel",
+                           foreground="#12915b")
         status.grid(row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         pos_row = ttk.Frame(top)
@@ -138,7 +144,7 @@ class App:
                 "（可选，填了就先打开这个页面）")
         add_row(8, "后台", ttk.Checkbutton(
             top, text="后台模式（浏览器窗口可被遮挡；截图改用浏览器自渲染）",
-            variable=self.var_background))
+            variable=self.var_background, style="Card.TCheckbutton"))
 
         gap_row = ttk.Frame(top)
         ttk.Label(gap_row, text="间隔秒数").pack(side="left")
@@ -149,25 +155,29 @@ class App:
         add_row(2, "", gap_row)
 
         add_row(3, "判据", ttk.Checkbutton(top, text="检测「同事沟通进度」人像图标（勾掉则只按文字淡化）",
-                                           variable=self.var_icon))
+                                           variable=self.var_icon, style="Card.TCheckbutton"))
         add_row(4, "刷新", ttk.Checkbutton(
-            top, text="滚动用尽时刷新页面（默认关闭：只向下滚，不刷新）", variable=self.var_refresh_page))
+            top, text="滚动用尽时刷新页面（默认关闭：只向下滚，不刷新）", variable=self.var_refresh_page, style="Card.TCheckbutton"))
         add_row(5, "块识别", ttk.Checkbutton(
-            top, text="用文字找推荐块（不依赖配色，较慢）", variable=self.var_text_scan))
-        add_row(6, "模式", ttk.Checkbutton(top, text="试运行（只识别不点击）", variable=self.var_dry))
+            top, text="用文字找推荐块（不依赖配色，较慢）", variable=self.var_text_scan, style="Card.TCheckbutton"))
+        add_row(6, "模式", ttk.Checkbutton(top, text="试运行（只识别不点击）", variable=self.var_dry, style="Card.TCheckbutton"))
 
         # ---------- 按钮 ----------
-        btns = ttk.Frame(root, padding=(10, 0))
-        btns.pack(fill="x", padx=16, pady=(4, 8))
+        btn_card = ttk.Frame(root, style="Card.TFrame", padding=(0, 10))
+        btn_card.pack(fill="x", padx=16, pady=(0, 10))
+        btns = ttk.Frame(btn_card, style="Card.TFrame")
+        btns.pack(fill="x", padx=14)
         self.btn_start = ttk.Button(btns, text="▶  开始运行", command=self.on_start,
                                     width=16, style="Accent.TButton")
         self.btn_start.pack(side="left")
         self.btn_stop = ttk.Button(btns, text="■  停止", command=self.on_stop,
                                    width=12, state="disabled")
         self.btn_stop.pack(side="left", padx=8)
-        self.lbl_status = ttk.Label(btns, text="● 空闲", foreground=self.C_MUTED)
+        self.lbl_status = ttk.Label(btns, text="● 空闲", style="Card.TLabel",
+                                    foreground=self.C_MUTED)
         self.lbl_status.pack(side="left", padx=16)
-        self.lbl_elapsed = ttk.Label(btns, text="耗时 --:--", foreground="#06c")
+        self.lbl_elapsed = ttk.Label(btns, text="耗时 --:--", style="Card.TLabel",
+                                     foreground="#1f7ae0")
         self.lbl_elapsed.pack(side="left", padx=8)
 
         # ---------- 进度条 ----------
@@ -176,6 +186,16 @@ class App:
         self.bar = ttk.Progressbar(prog, mode="determinate", maximum=100,
                                    style="Thin.Horizontal.TProgressbar")
         self.bar.pack(fill="x")
+
+        # ---------- 底部状态条 ----------
+        foot = tk.Frame(root, bg="#eaeef4")
+        foot.pack(fill="x", side="bottom")
+        self.lbl_foot = tk.Label(foot, text="就绪", bg="#eaeef4", fg="#6b7684",
+                                 font=("Microsoft YaHei UI", 9), anchor="w")
+        self.lbl_foot.pack(side="left", padx=16, pady=5)
+        pos_name = self.var_position.get() if hasattr(self, "var_position") else ""
+        tk.Label(foot, text=f"岗位：{pos_name}", bg="#eaeef4", fg="#1f7ae0",
+                 font=("Microsoft YaHei UI", 9)).pack(side="right", padx=16)
 
         # ---------- 日志 ----------
         box = ttk.LabelFrame(root, text="  运行日志  ", padding=(10, 8))
@@ -291,6 +311,16 @@ class App:
         style.configure("TEntry", padding=5)
         style.configure("TCombobox", padding=4)
         style.configure("TSpinbox", padding=4)
+        style.configure("Card.TLabelframe", background=self.C_CARD, bordercolor=self.C_LINE,
+                        relief="solid", borderwidth=1)
+        style.configure("Card.TLabelframe.Label", background=self.C_CARD,
+                        foreground=self.C_ACCENT, font=fb)
+        style.configure("Card.TCheckbutton", background=self.C_CARD,
+                        font=("Microsoft YaHei UI", 9))
+        style.configure("Card.TLabel", background=self.C_CARD, foreground=self.C_TEXT)
+        style.configure("CardMuted.TLabel", background=self.C_CARD, foreground=self.C_MUTED,
+                        font=("Microsoft YaHei UI", 9))
+        style.configure("Card.TEntry", fieldbackground="#fbfcfe")
         style.configure("Thin.Horizontal.TProgressbar", troughcolor="#e6ebf2",
                         bordercolor="#e6ebf2", background=self.C_ACCENT, thickness=8)
 
