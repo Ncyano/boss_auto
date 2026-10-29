@@ -55,12 +55,20 @@ class App:
         self.last_elapsed: float = 0.0            # 上一次任务的耗时（秒）
 
         root.title("BOSS 自动开简历 · 控制台")
-        root.geometry("980x720")
-        root.minsize(820, 560)
+        root.geometry("1020x760")
+        root.minsize(880, 600)
+        self._init_style(root)
+
+        # ---------- 顶部标题 ----------
+        head = ttk.Frame(root)
+        head.pack(fill="x", padx=16, pady=(14, 4))
+        ttk.Label(head, text="BOSS 自动开简历", style="Title.TLabel").pack(side="left")
+        ttk.Label(head, text="  后台模式 · 自动读简历 · 判定后打招呼",
+                  style="Sub.TLabel").pack(side="left", pady=(6, 0))
 
         # ---------- 参数区 ----------
-        top = ttk.LabelFrame(root, text="参数", padding=10)
-        top.pack(fill="x", padx=10, pady=(10, 6))
+        top = ttk.LabelFrame(root, text="  运行参数  ", padding=(14, 12))
+        top.pack(fill="x", padx=16, pady=(6, 8))
 
         self.var_limit = tk.IntVar(value=20)
         try:
@@ -111,7 +119,7 @@ class App:
         except Exception as exc:
             _reader_text = f"识别方式读取失败：{exc}"
         status = ttk.Label(top, text=f"识别方式：{_reader_text}", foreground="#0a6")
-        status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        status.grid(row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         pos_row = ttk.Frame(top)
         pos_row.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
@@ -150,26 +158,31 @@ class App:
 
         # ---------- 按钮 ----------
         btns = ttk.Frame(root, padding=(10, 0))
-        btns.pack(fill="x", pady=6)
-        self.btn_start = ttk.Button(btns, text="▶  开始", command=self.on_start, width=14)
+        btns.pack(fill="x", padx=16, pady=(4, 8))
+        self.btn_start = ttk.Button(btns, text="▶  开始运行", command=self.on_start,
+                                    width=16, style="Accent.TButton")
         self.btn_start.pack(side="left")
-        self.btn_stop = ttk.Button(btns, text="■  停止", command=self.on_stop, width=14, state="disabled")
+        self.btn_stop = ttk.Button(btns, text="■  停止", command=self.on_stop,
+                                   width=12, state="disabled")
         self.btn_stop.pack(side="left", padx=8)
-        self.lbl_status = ttk.Label(btns, text="状态：空闲")
+        self.lbl_status = ttk.Label(btns, text="● 空闲", foreground=self.C_MUTED)
         self.lbl_status.pack(side="left", padx=16)
         self.lbl_elapsed = ttk.Label(btns, text="耗时 --:--", foreground="#06c")
         self.lbl_elapsed.pack(side="left", padx=8)
 
         # ---------- 进度条 ----------
         prog = ttk.Frame(root, padding=(10, 0))
-        prog.pack(fill="x")
-        self.bar = ttk.Progressbar(prog, mode="determinate", maximum=100)
+        prog.pack(fill="x", padx=16)
+        self.bar = ttk.Progressbar(prog, mode="determinate", maximum=100,
+                                   style="Thin.Horizontal.TProgressbar")
         self.bar.pack(fill="x")
 
         # ---------- 日志 ----------
-        box = ttk.LabelFrame(root, text="运行日志", padding=6)
-        box.pack(fill="both", expand=True, padx=10, pady=(6, 10))
-        self.text = tk.Text(box, wrap="none", height=24, font=("Consolas", 9))
+        box = ttk.LabelFrame(root, text="  运行日志  ", padding=(10, 8))
+        box.pack(fill="both", expand=True, padx=16, pady=(8, 14))
+        self.text = tk.Text(box, wrap="none", height=24, font=("Consolas", 10),
+                            bg="#1e2430", fg="#d7e0ea", insertbackground="#d7e0ea",
+                            relief="flat", padx=10, pady=8)
         yscroll = ttk.Scrollbar(box, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=yscroll.set)
         self.text.pack(side="left", fill="both", expand=True)
@@ -234,6 +247,53 @@ class App:
             self.root.after(500, self.pump)
 
     # ---------- 动作 ----------
+    # 配色
+    C_BG     = "#f5f7fa"
+    C_CARD   = "#ffffff"
+    C_LINE   = "#d8dee6"
+    C_TEXT   = "#1f2430"
+    C_MUTED  = "#6b7684"
+    C_ACCENT = "#1f7ae0"
+    C_OK     = "#12915b"
+    C_WARN   = "#c25b12"
+
+    def _init_style(self, root) -> None:
+        style = ttk.Style(root)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        f = ("Microsoft YaHei UI", 10)
+        fb = ("Microsoft YaHei UI", 10, "bold")
+        root.configure(bg=self.C_BG)
+        style.configure(".", font=f, background=self.C_BG, foreground=self.C_TEXT)
+        style.configure("TFrame", background=self.C_BG)
+        style.configure("Card.TFrame", background=self.C_CARD)
+        style.configure("TLabel", background=self.C_BG, foreground=self.C_TEXT)
+        style.configure("Card.TLabel", background=self.C_CARD)
+        style.configure("Muted.TLabel", background=self.C_BG, foreground=self.C_MUTED,
+                        font=("Microsoft YaHei UI", 9))
+        style.configure("Title.TLabel", background=self.C_BG, foreground=self.C_TEXT,
+                        font=("Microsoft YaHei UI", 15, "bold"))
+        style.configure("Sub.TLabel", background=self.C_BG, foreground=self.C_MUTED,
+                        font=("Microsoft YaHei UI", 9))
+        style.configure("TLabelframe", background=self.C_BG, bordercolor=self.C_LINE,
+                        relief="solid", borderwidth=1)
+        style.configure("TLabelframe.Label", background=self.C_BG, foreground=self.C_ACCENT,
+                        font=fb)
+        style.configure("TButton", font=f, padding=(14, 7))
+        style.configure("Accent.TButton", font=fb, padding=(18, 9),
+                        background=self.C_ACCENT, foreground="#ffffff", borderwidth=0)
+        style.map("Accent.TButton",
+                  background=[("active", "#1866bd"), ("disabled", "#b9c6d6")])
+        style.configure("Danger.TButton", font=f, padding=(14, 7))
+        style.configure("TCheckbutton", background=self.C_BG, font=("Microsoft YaHei UI", 9))
+        style.configure("TEntry", padding=5)
+        style.configure("TCombobox", padding=4)
+        style.configure("TSpinbox", padding=4)
+        style.configure("Thin.Horizontal.TProgressbar", troughcolor="#e6ebf2",
+                        bordercolor="#e6ebf2", background=self.C_ACCENT, thickness=8)
+
     def _on_position_change(self, _evt=None) -> None:
         import kb as _kb
         name = self.var_position.get()
