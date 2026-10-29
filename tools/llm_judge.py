@@ -64,7 +64,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     rows = list(csv.DictReader(open(args.file, encoding="utf-8-sig")))
-    rules = screening.load_rules()
 
     picked = []
     for r in rows:

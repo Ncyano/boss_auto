@@ -1,0 +1,21 @@
+{
+  "include": [
+    "boss_vision",
+    "tools",
+    "mcp_server.py"
+  ],
+  "exclude": [
+    "**/.venv",
+    "**/data",
+    "**/dist",
+    "**/build",
+    "**/__pycache__"
+  ],
+  "extraPaths": [
+    "boss_vision"
+  ],
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}
