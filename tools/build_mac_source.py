@@ -42,6 +42,14 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
                 continue
             z.write(f, f"{NAME}/{d}/{f.relative_to(base)}")
             added += 1
+    # 离线依赖（macOS wheel）
+    wh = ROOT / "data" / "wheelhouse"
+    if wh.exists():
+        for f in wh.rglob("*.whl"):
+            rel = f.relative_to(wh)
+            z.write(f, f"{NAME}/wheelhouse/{rel.as_posix()}")
+            added += 1
+
     # 额外：kb 数据
     kb_data = ROOT / "boss_vision" / "data"
     if kb_data.exists():
