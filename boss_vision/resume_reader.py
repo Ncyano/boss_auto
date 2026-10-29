@@ -439,7 +439,13 @@ def parse_sidebar_items(items: list[dict]) -> list[dict]:
 
 
 def read_sidebar(engine, img: np.ndarray, wide: vision.Rect, log=print) -> list[dict]:
-    """读右侧「经历概览」（先定位标题，再只 OCR 那一块）。"""
+    """读右侧「经历概览」（先定位标题，再只 OCR 那一块）。
+
+    本地 OCR 可能被禁用（老 CPU 上 onnxruntime 会崩），此时直接返回空列表。
+    """
+    if engine is None:
+        log("  [sidebar] 本地 OCR 未启用，跳过经历概览")
+        return []
     band = sidebar_band(img, wide)
     probe = vision.Rect(band.x, band.y, min(160, band.w), band.h)
     head_items = vision.ocr_crop(engine, img, probe)

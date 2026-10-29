@@ -108,6 +108,21 @@ class _WS:
             pass
 
 
+BOSS_HOSTS = ("zhipin.com", "www.zhipin.com", "wapi.zhipin.com")
+
+
+def _is_boss_url(url: str) -> bool:
+    """严格判断是否为 BOSS 页面（精确到域名后缀，防止 evil-zhipin.com 这类仿冒）。"""
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    return host == "zhipin.com" or host.endswith(".zhipin.com")
+
+
 # ------------------------------------------------------------------ CDP
 
 _WINDOW_TITLE = [""]      # BOSS 窗口标题（含当前活动页标题）
@@ -124,16 +139,21 @@ class CDP:
             _PINNED_PAGE[0] = self._page_ws_url(page_match)
         self.ws = _WS(_PINNED_PAGE[0])
         self.view = self._call("Page.getLayoutMetrics") or {}
-        # 校验：固定下来的页签确实是 BOSS，否则后续操作可能串到别的页面
-        try:
-            href = (self._call("Runtime.evaluate",
-                               {"expression": "location.href",
-                                "returnByValue": True}).get("result") or {}).get("value") or ""
-            self.href = str(href)
-            if "zhipin.com" not in self.href:
-                raise RuntimeError(f"当前 CDP 页签不是 BOSS（{self.href[:60]}），已中止以免误操作")
-        except Exception:
-            self.href = ""
+        # 校验：固定下来的页签必须是 BOSS，否则后续操作可能串到别的页面。
+        # 这里**不允许**静默兜底——校验失败就中止，避免把点击派发到错误页面。
+        res = self._call("Runtime.evaluate",
+                         {"expression": "location.href", "returnByValue": True})
+        href = str((res.get("result") or {}).get("value") or "")
+        self.href = href
+        if not href:
+            self.close()
+            _PINNED_PAGE[0] = None
+            raise RuntimeError("无法读取当前页签地址（CDP 连接可能已失效），已中止")
+        if not _is_boss_url(href):
+            self.close()
+            _PINNED_PAGE[0] = None
+            raise RuntimeError(
+                f"当前 CDP 页签不是 BOSS 页面（{href[:60]}），已中止以免误操作")
         self._send("Page.enable")
 
     # ---------- 发现页签 ----------
@@ -159,7 +179,9 @@ class CDP:
             for t in pages:
                 if key in (t.get("url") or "") or key in (t.get("title") or ""):
                     return t["webSocketDebuggerUrl"]
-        return pages[0]["webSocketDebuggerUrl"]
+        # 没有匹配项时不再退回第一个页签（那可能是任意网站）
+        urls = "、".join((t.get("url") or "")[:40] for t in pages[:4])
+        raise RuntimeError(f"没有找到 BOSS 页签（现有页签：{urls}）。请先打开 zhipin.com")
 
     # ---------- 命令通道 ----------
     def _send(self, method: str, params: dict | None = None) -> dict:

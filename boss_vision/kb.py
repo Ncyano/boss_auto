@@ -690,8 +690,13 @@ _ORIG_LOAD = load
 _ACTIVE = {"name": None}
 
 
-def set_position(name: str | None) -> str:
-    """设置当前招聘岗位（None = 回到默认 active）。"""
+def set_position(name: str | None, force: bool = False) -> str:
+    """设置当前招聘岗位（None = 回到默认 active）。
+
+    任务运行期间（lock_position 之后）默认拒绝切换，避免规则中途变化。
+    """
+    if _LOCKED["on"] and not force:
+        return current_position()
     _ACTIVE["name"] = name or None
     return current_position()
 
@@ -711,3 +716,28 @@ def load(path=None):
         except Exception:
             pass
     return _ORIG_LOAD(path)
+
+def is_ready(name: str | None = None) -> bool:
+    """该岗位是否已配置好标准（只有 ready 才能用于实盘）。"""
+    meta = positions()
+    target = name or current_position()
+    for p in meta.get("positions", []):
+        if p.get("name") == target:
+            return p.get("status") == "ready"
+    return False
+
+
+_LOCKED = {"on": False}
+
+
+def lock_position() -> None:
+    """任务开始后锁定岗位，防止运行中被切换导致规则漂移。"""
+    _LOCKED["on"] = True
+
+
+def unlock_position() -> None:
+    _LOCKED["on"] = False
+
+
+def position_locked() -> bool:
+    return _LOCKED["on"]

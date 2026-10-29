@@ -130,10 +130,10 @@ class App:
         pos_row = ttk.Frame(top)
         pos_row.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
         ttk.Label(pos_row, text="招聘岗位").pack(side="left")
-        pos_box = ttk.Combobox(pos_row, textvariable=self.var_position, width=12,
-                               values=self.position_names, state="readonly")
-        pos_box.pack(side="left", padx=6)
-        pos_box.bind("<<ComboboxSelected>>", self._on_position_change)
+        self.pos_box = ttk.Combobox(pos_row, textvariable=self.var_position, width=12,
+                                      values=self.position_names, state="readonly")
+        self.pos_box.pack(side="left", padx=6)
+        self.pos_box.bind("<<ComboboxSelected>>", self._on_position_change)
         self.lbl_position = ttk.Label(pos_row, text="", foreground="#0a6")
         self.lbl_position.pack(side="left", padx=6)
 
@@ -285,6 +285,8 @@ class App:
         else:
             if self.worker is not None:
                 self.worker = None
+                if hasattr(self, "pos_box"):
+                    self.pos_box.configure(state="readonly")
                 self.btn_start.configure(state="normal")
                 self.btn_stop.configure(state="disabled")
             self.root.after(500, self.pump)
@@ -398,6 +400,8 @@ class App:
             return
         self.start_ts = time.time()
         self.btn_start.configure(state="disabled")
+        if hasattr(self, "pos_box"):
+            self.pos_box.configure(state="disabled")
         self.btn_stop.configure(state="normal")
 
         kwargs = dict(
@@ -414,6 +418,7 @@ class App:
             allow_refresh=bool(self.var_refresh_page.get()),
             block_text_scan=bool(self.var_text_scan.get()),
             capture="cdp" if bool(self.var_background.get()) else "screen",
+            position=self.var_position.get() if hasattr(self, "var_position") else None,
             url=(self.var_url.get() or "").strip(),
         )
 

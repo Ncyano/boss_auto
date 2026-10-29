@@ -109,6 +109,9 @@ def test_ocr_fixture() -> None:
         return
 
     img = np.asarray(Image.open(img_path).convert("RGB"))[:, :, ::-1].copy()
+    if engine is None:
+        print("  本地 OCR 未启用（BOSS_LOCAL_OCR!=1），跳过该用例")
+        return 0
     entries = resume_reader.read_sidebar(engine, img, vision.Rect(1609, 252, 285, 40),
                                          log=lambda *_: None)
     check("从截图解析出 10 段以上", len(entries) >= 10, str(len(entries)))

@@ -144,12 +144,17 @@ def tool_start_batch(args: dict) -> str:
     capture = str(args.get("capture") or "cdp")
 
     def _run() -> None:
+        # 关键：driver.run 全程使用 print()，而 MCP 的 stdout 是 JSON-RPC 通道。
+        # 在采集线程里把 stdout/stderr 全部改到 stderr，避免污染协议输出。
+        import contextlib
+        import sys as _sys
         try:
-            driver.run(live=live, limit=limit, max_scrolls=None, read="scroll",
-                       anchor=(1250, 600), max_refresh=None,
-                       min_gap=min_gap, max_gap=max_gap, icon_check=True,
-                       count_valid=True, allow_refresh=allow_refresh,
-                       block_text_scan=False, capture=capture, url=url)
+            with contextlib.redirect_stdout(_sys.stderr):
+                driver.run(live=live, limit=limit, max_scrolls=None, read="scroll",
+                           anchor=(1250, 600), max_refresh=None,
+                           min_gap=min_gap, max_gap=max_gap, icon_check=True,
+                           count_valid=True, allow_refresh=allow_refresh,
+                           block_text_scan=False, capture=capture, url=url)
         except Exception as exc:
             RUN["last_error"] = f"{type(exc).__name__}: {exc}"
 

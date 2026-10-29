@@ -333,8 +333,23 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
         icon_check: bool = True, count_valid: bool = False,
         max_attempts: int | None = None, allow_refresh: bool = False,
         block_text_scan: bool = False, reader: str = "auto",
-        capture: str = "screen", url: str = "") -> int:
+        capture: str = "screen", url: str = "", position: str | None = None) -> int:
     _ensure_utf8_stdio()
+    # 岗位快照：开跑时锁定，避免运行中被切换导致规则漂移
+    try:
+        import kb as _kb
+        if position:
+            _kb.set_position(position)
+        _pos = _kb.current_position()
+        if not _kb.is_ready(_pos):
+            print(f"[中止] 招聘岗位「{_pos}」尚未配置判定标准，"
+                  f"不能用于实盘。请先在 kb_positions.json 里设为 ready。")
+            return 3
+        _kb.lock_position()
+        print(f"  [岗位] {_pos}（规则已锁定）")
+    except ImportError:
+        pass
+
     winenv.enable_dpi_awareness()
     found = winenv.find_window("BOSS直聘")
     if not found and capture == "cdp":
@@ -508,7 +523,9 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
             except Exception:
                 rows = [export_csv.row_of(rec) for rec in results]
             rows = export_csv.dedupe_rows(rows)      # 同一人只留一条
-            export_csv.write_csv(_out_dir() / f"{stamps}-summary.csv", rows)
+            summary_path = _out_dir() / f"{stamps}-summary.csv"
+            export_csv.write_csv(summary_path, rows)
+            print(f"  汇总表已生成：{summary_path.name}")
             export_csv.merge_into_daily(OUT, rows)   # 当天那张表：按日期命名并累计
         except Exception as exc:
             print(f"[warn] CSV 生成失败：{exc}")
@@ -1270,6 +1287,12 @@ def run(live: bool, limit: int, max_scrolls: int | None = None, read: str = "scr
     print(f"  {stamps}-results.json   结构化结果")
     print(f"  {stamps}-summary.csv    汇总表（含工作内容）")
     print(f"  {stamps}-resume-*.txt   每人简历全文")
+    try:
+        import kb as _kb
+        _kb.unlock_position()
+    except Exception:
+        pass
+
     return 0
 
 
