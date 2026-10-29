@@ -193,9 +193,6 @@ class App:
         self.lbl_foot = tk.Label(foot, text="就绪", bg="#eaeef4", fg="#6b7684",
                                  font=("Microsoft YaHei UI", 9), anchor="w")
         self.lbl_foot.pack(side="left", padx=16, pady=5)
-        pos_name = self.var_position.get() if hasattr(self, "var_position") else ""
-        tk.Label(foot, text=f"岗位：{pos_name}", bg="#eaeef4", fg="#1f7ae0",
-                 font=("Microsoft YaHei UI", 9)).pack(side="right", padx=16)
 
         # ---------- 日志 ----------
         box = ttk.LabelFrame(root, text="  运行日志  ", padding=(10, 8))
@@ -207,15 +204,41 @@ class App:
         self.text.configure(yscrollcommand=yscroll.set)
         self.text.pack(side="left", fill="both", expand=True)
         yscroll.pack(side="right", fill="y")
+        self._init_log_tags()
         self.text.configure(state="disabled")
 
         self.root.after(120, self.pump)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # ---------- 日志与状态刷新 ----------
+    def _init_log_tags(self) -> None:
+        self.text.tag_configure("ok", foreground="#4ade80")        # 绿
+        self.text.tag_configure("bad", foreground="#f87171")       # 红
+        self.text.tag_configure("skip", foreground="#fbbf24")      # 黄
+        self.text.tag_configure("warn", foreground="#fb923c")      # 橙
+        self.text.tag_configure("hl", foreground="#60a5fa")        # 蓝（姓名等）
+
+    def _insert_highlighted(self, s: str) -> None:
+        """按关键词给整行上色：不合适(红) / 合适(绿) / [skip](黄)。"""
+        low = s
+        if "不合适" in low:
+            tag = "bad"
+        elif "合适" in low:
+            tag = "ok"
+        elif "[skip]" in low or "跳过" in low:
+            tag = "skip"
+        elif "[warn]" in low or "失败" in low or "错误" in low:
+            tag = "warn"
+        else:
+            tag = ""
+        if tag:
+            self.text.insert("end", s, tag)
+        else:
+            self.text.insert("end", s)
+
     def append(self, s: str) -> None:
         self.text.configure(state="normal")
-        self.text.insert("end", s)
+        self._insert_highlighted(s)
         # 行数太多就截掉前面
         if int(self.text.index("end-1c").split(".")[0]) > 3000:
             self.text.delete("1.0", "500.0")
