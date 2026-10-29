@@ -217,13 +217,17 @@ def daily_path(runs_dir: Path, day: str | None = None) -> Path:
 def dedupe_key(row: dict) -> tuple:
     """同一个人的指纹：姓名 + 学校 + 第一家公司 + 起止。
 
-    只按姓名会在"同名不同人"时误删，所以带上学校与首段经历；
-    四项都相同才认为是重复。
+    只按姓名会在「同名不同人」时误删，所以带上学校与首段经历。
+    返回的元组末尾带一个「信息量」标记：
+        rich=True   —— 至少有一项辅助信息，可安全合并
+        rich=False  —— 只有姓名（其余都空），不能据此合并
     """
-    return (str(row.get("姓名", "")).strip(),
-            str(row.get("学校", "")).strip(),
-            str(row.get("第1家公司", "")).strip(),
-            str(row.get("第1家起止", "")).replace(" ", ""))
+    name = str(row.get("姓名", "")).strip()
+    school = str(row.get("学校", "")).strip()
+    company = str(row.get("第1家公司", "")).strip()
+    period = str(row.get("第1家起止", "")).replace(" ", "").strip()
+    rich = bool(school or company or period)
+    return (name, school, company, period, rich)
 
 
 def dedupe_rows(rows: list[dict]) -> list[dict]:
@@ -236,11 +240,19 @@ def dedupe_rows(rows: list[dict]) -> list[dict]:
     for row in rows:
         name = str(row.get("姓名", "") or "").strip()
         if not name:
-            out.append(row)
+            out.append(row)                # 无名记录一律保留
             continue
         key = dedupe_key(row)
+        if not key[-1]:
+            # 只有姓名、没有任何辅助信息：无法判断是否同一人，保留并标记
+            row["需复核"] = row.get("需复核") or "是"
+            reason = str(row.get("复核原因") or "")
+            note = "导出时同名但无可比对信息（学校/公司/起止均空），请人工确认"
+            row["复核原因"] = f"{reason}；{note}" if reason else note
+            out.append(row)
+            continue
         if key in index:
-            out[index[key]] = row          # 后到的覆盖先到的
+            out[index[key]] = row          # 后到的覆盖先到的（信息齐全时才合并）
         else:
             index[key] = len(out)
             out.append(row)

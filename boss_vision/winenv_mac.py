@@ -106,29 +106,65 @@ def move(x: int, y: int) -> None:
     return
 
 
-def scroll(x: int, y: int, clicks: int, tolerance: int = 6) -> None:
-    """与 Windows 版同签名：在 (x, y) 处滚动 clicks 格（正=向下）。"""
-    _cdp.shared().wheel(int(clicks) * 100, x, y)
+def scroll(x: int, y: int, clicks: int = -3, tolerance: int = 6) -> None:
+    """与 Windows 版同签名、同方向：clicks 为负 = 向下翻。
+
+    CDP 的 wheel(x, y, delta_y) 里 delta_y 为负表示向下，
+    而页面 scrollTop 需要正增量，所以统一用 -clicks*120 换算。
+    """
+    cli = _cdp.shared()
+    delta = -int(clicks) * 120          # scrollTop 增量（正=向下）
+    try:
+        before = cli.scroll_top()
+        if cli.scroll_js(delta) != before:
+            return
+        cli.scroll_css(int(x), int(y), delta)
+    except Exception:
+        # 兜底：滚轮事件（delta_y 用负值表示向下）
+        cli.wheel(int(x), int(y), -delta)
 
 
-def scroll_at(x: int, y: int, clicks: int) -> None:
+def scroll_at(x: int, y: int, clicks: int = -3) -> None:
     scroll(x, y, clicks)
 
 
-def scroll_modal(clicks: int, x: int | None = None, y: int | None = None) -> None:
-    _cdp.shared().scroll_modal(int(clicks) * 100)
+def scroll_modal(clicks: int = -3, x: int | None = None, y: int | None = None) -> bool:
+    """滚简历弹窗：clicks 为负 = 向下（与 Windows 版一致）。
+
+    Windows 版换算成 -clicks*120 的 scrollTop 增量，这里保持一致。
+    """
+    cli = _cdp.shared()
+    delta = -int(clicks) * 120
+    try:
+        if cli.scroll_modal(delta):
+            return True
+    except Exception:
+        pass
+    if x and y:
+        try:
+            before = cli.modal_scroll_top()
+            cli.scroll_css(int(x), int(y), delta)
+            return cli.modal_scroll_top() != before
+        except Exception:
+            pass
+    return False
 
 
 def scroll_modal_top(clicks: int = 1, tolerance: int = 6) -> None:
     _cdp.shared().scroll_modal_top()
 
 
-def scroll_modal_bottom(clicks: int = 100) -> None:
-    _cdp.shared().scroll_modal_bottom()
+def scroll_modal_bottom(clicks: int = 100) -> bool:
+    try:
+        _cdp.shared().scroll_modal_bottom()
+        return True
+    except Exception:
+        return False
 
 
-def raw_wheel(x: int, y: int, clicks: int) -> None:
-    _cdp.shared().wheel(int(clicks) * 100, x, y)
+def raw_wheel(x: int, y: int, clicks: int = -3) -> None:
+    """原始滚轮：clicks 与 Windows 一致（负=向下）。"""
+    _cdp.shared().wheel(int(x), int(y), int(clicks) * 40)
 
 
 def press_escape() -> bool:
