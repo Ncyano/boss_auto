@@ -528,6 +528,13 @@ class CDP:
         img = Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
         return np.array(img)[:, :, ::-1].copy()
 
+    def click_at(self, x: float, y: float, double: bool = False) -> None:
+        """按 CSS 坐标点击（mac/Linux 的鼠标注入走这里）。"""
+        self.click_css(x, y)
+        if double:
+            time.sleep(0.08)
+            self.click_css(x, y)
+
     def click_css(self, x: float, y: float) -> None:
         """在页面 CSS 坐标处派发真实鼠标事件。"""
         base = {"x": float(x), "y": float(y), "button": "left",
@@ -725,3 +732,24 @@ def available(port: int = DEFAULT_PORT) -> bool:
             return True
     except Exception:
         return False
+
+
+_SHARED = [None]
+
+
+def shared():
+    """复用同一个 CDP 连接（避免频繁建连被浏览器限流）。"""
+    if _SHARED[0] is None:
+        _SHARED[0] = CDP()
+    return _SHARED[0]
+
+
+def reset_cdp() -> None:
+    """丢弃共享连接（页面重载 / 端口变化后调用）。"""
+    try:
+        if _SHARED[0] is not None:
+            _SHARED[0].close()
+    except Exception:
+        pass
+    _SHARED[0] = None
+    _PINNED_PAGE[0] = None

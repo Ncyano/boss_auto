@@ -14,9 +14,13 @@ fi
 echo "python3: $(python3 -V 2>&1)"
 python3 - <<'PY'
 import sys
-if sys.version_info < (3, 10):
-    print("需要 Python 3.10 以上（建议 3.11+）")
+if sys.version_info[:2] != (3, 13):
+    print("本包的离线依赖是按 CPython 3.13 编译的。")
+    print(f"当前 python3 是 {sys.version.split()[0]}，请安装 Python 3.13：")
+    print("  brew install python@3.13")
+    print("  或 https://www.python.org/downloads/macos/")
     raise SystemExit(1)
+print("Python 版本 OK：3.13")
 PY
 
 ARCH="$(uname -m)"

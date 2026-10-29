@@ -17,8 +17,18 @@ INCLUDE_FILES = [
     "config.example.json", "requirements.txt", "README.md", "MAC-使用说明.md",
     "pyrightconfig.json", "mcp_server.py",
 ]
-INCLUDE_DIRS = ["boss_vision"]
-SKIP_PARTS = {"__pycache__", ".venv", "runs", "_test_runs", "assets", "data"}
+INCLUDE_DIRS = ["boss_vision", "运营助理知识库_v0.1"]
+
+# 运行时必需的数据文件（在仓库根 data/ 下，schools.py 与 screening.py 按此路径读取）
+RUNTIME_DATA = [
+    "data/schools-normalized.csv",
+    "data/schools.meta.json",
+    "data/schools-adult.csv",
+    "data/schools-adult.meta.json",
+    "data/school-aliases.json",
+    "data/screening-rules.json",
+]
+SKIP_PARTS = {"__pycache__", ".venv", "runs", "_test_runs"}
 SKIP_SUFFIX = {".pyc", ".log", ".json.bak"}
 
 added = 0
@@ -42,6 +52,15 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
                 continue
             z.write(f, f"{NAME}/{d}/{f.relative_to(base)}")
             added += 1
+    # 运行时数据（学校名单 / 筛选规则）
+    for rel in RUNTIME_DATA:
+        f = ROOT / rel
+        if f.exists():
+            z.write(f, f"{NAME}/{rel}")
+            added += 1
+        else:
+            print(f"  [warn] 缺少运行时数据: {rel}")
+
     # 离线依赖（macOS wheel）
     wh = ROOT / "data" / "wheelhouse"
     if wh.exists():

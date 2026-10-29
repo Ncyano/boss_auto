@@ -28,6 +28,10 @@ class CaptureDowngraded(RuntimeError):
     """抓图方式降级（mac 上无屏幕抓图可退，直接抛）。"""
 
 
+class InputBlocked(RuntimeError):
+    """输入被阻断。mac 上走 CDP，不会发生；保留同名异常以兼容调用方。"""
+
+
 # ---------------------------------------------------------------- 基础
 def set_capture(mode: str) -> None:
     _CAPTURE_MODE[0] = "cdp"
@@ -86,10 +90,11 @@ def _grab_screen(rect=None):
 
 
 # ---------------------------------------------------------------- 输入
-def click(x: int, y: int, *, tolerance: int = 40, double: bool = False,
-          container: str | None = None, log=print) -> None:
-    """按坐标点击（CSS 像素坐标）。"""
-    _cdp.shared().click_at(int(x), int(y), double=double)
+def click(x: int, y: int, settle: float = 0.0, tolerance: int = 40) -> None:
+    """按坐标点击（CSS 像素坐标）。签名与 Windows 版一致。"""
+    _cdp.shared().click_at(int(x), int(y))
+    if settle:
+        time.sleep(float(settle))
 
 
 def click_css(x: int, y: int, log=print) -> None:
@@ -101,28 +106,29 @@ def move(x: int, y: int) -> None:
     return
 
 
-def scroll(dy: int, x: int | None = None, y: int | None = None, log=print) -> None:
-    _cdp.shared().wheel(int(dy), x, y)
+def scroll(x: int, y: int, clicks: int, tolerance: int = 6) -> None:
+    """与 Windows 版同签名：在 (x, y) 处滚动 clicks 格（正=向下）。"""
+    _cdp.shared().wheel(int(clicks) * 100, x, y)
 
 
-def scroll_at(x: int, y: int, dy: int, log=print) -> None:
-    _cdp.shared().wheel(int(dy), x, y)
+def scroll_at(x: int, y: int, clicks: int) -> None:
+    scroll(x, y, clicks)
 
 
-def scroll_modal(dy: int, log=print) -> None:
-    _cdp.shared().scroll_modal(int(dy))
+def scroll_modal(clicks: int, x: int | None = None, y: int | None = None) -> None:
+    _cdp.shared().scroll_modal(int(clicks) * 100)
 
 
-def scroll_modal_top(log=print) -> None:
+def scroll_modal_top(clicks: int = 1, tolerance: int = 6) -> None:
     _cdp.shared().scroll_modal_top()
 
 
-def scroll_modal_bottom(log=print) -> None:
+def scroll_modal_bottom(clicks: int = 100) -> None:
     _cdp.shared().scroll_modal_bottom()
 
 
-def raw_wheel(dy: int, log=print) -> None:
-    _cdp.shared().wheel(int(dy))
+def raw_wheel(x: int, y: int, clicks: int) -> None:
+    _cdp.shared().wheel(int(clicks) * 100, x, y)
 
 
 def press_escape() -> bool:
@@ -138,6 +144,65 @@ def close_dialog_by_js() -> bool:
         return bool(_cdp.shared().close_dialog_by_js())
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------- 权限与焦点
+def injection_permission(hwnd=None) -> tuple[bool, str]:
+    """mac 上不做 Win32 注入，直接返回通过（保持与 Windows 版同返回结构）。"""
+    return True, "CDP 注入（macOS 无需 UIPI 检查）"
+
+
+def focus(hwnd=None) -> bool:
+    """CDP 下无需前台窗口。"""
+    return True
+
+
+def foreground_hwnd():
+    return 1
+
+
+def integrity_name(pid: int | None = None) -> str:
+    return "n/a"
+
+
+def window_pid(hwnd=None) -> int:
+    return 0
+
+
+def press_key(vk: int, hold: float = 0.05) -> None:
+    """按虚拟键码（Windows VK）。mac 上只处理 Esc / Enter。"""
+    if vk in (0x1B,):
+        press_escape()
+    return
+
+
+def cursor_pos() -> tuple[int, int]:
+    return (0, 0)
+
+
+def move_to(x: int, y: int, duration: float = 0.0) -> None:
+    """CDP 下不移动真实鼠标。"""
+    return
+
+
+def hotkey(mods, key) -> None:
+    return
+
+
+def clipboard_text(hwnd=None) -> str:
+    return ""
+
+
+def disable_cdp_scroll() -> None:
+    return
+
+
+def reset_cdp_scroll() -> None:
+    return
+
+
+def last_error() -> str:
+    return ""
 
 
 # ---------------------------------------------------------------- 业务动作
@@ -163,7 +228,15 @@ def greet_button_text() -> str:
         return ""
 
 
-def click_list_refresh(log=print) -> bool:
+def modal_open_dom() -> bool:
+    """简历弹窗是否打开（DOM 判定）。"""
+    try:
+        return bool(_cdp.shared().modal_open_dom())
+    except Exception:
+        return False
+
+
+def click_list_refresh() -> bool:
     try:
         return bool(_cdp.shared().click_element("刷新"))
     except Exception:
@@ -188,7 +261,7 @@ CHROME_CANDIDATES = [
 
 
 def launch_debug_browser(url: str = "https://www.zhipin.com/web/chat/recommend",
-                         wait: float = 25) -> bool:
+                         wait: float = 25, port: int = 9222) -> bool:
     """启动带调试端口的 Chrome/Edge（独立 profile）。"""
     exe = next((p for p in CHROME_CANDIDATES if os.path.exists(p)), None)
     if not exe:
