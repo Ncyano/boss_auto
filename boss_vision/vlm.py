@@ -404,6 +404,23 @@ TAG_WORDS = {
 }
 
 
+# 招聘者自己的账号名（页面右上角）等，绝不能当作候选人姓名
+_DENY_NAMES: set[str] = set()
+
+
+def set_deny_names(names) -> None:
+    """登记需要排除的姓名（招聘者账号名、公司名等）。"""
+    for n in names or []:
+        t = str(n or "").strip()
+        if t:
+            _DENY_NAMES.add(t)
+            _DENY_NAMES.add(t.replace(" ", ""))
+
+
+def deny_names() -> set[str]:
+    return set(_DENY_NAMES)
+
+
 def is_plausible_name(text: str) -> bool:
     """判断是不是一个像样的姓名。
 
@@ -413,6 +430,8 @@ def is_plausible_name(text: str) -> bool:
     import re as _re
     t = (text or "").strip().rstrip("网直聘 ")
     if not t or t in NON_NAME_WORDS:
+        return False
+    if t in _DENY_NAMES or _re.sub(r"\s+", "", t) in _DENY_NAMES:
         return False
     # 备注：英文马甲（含 CRTCRT 这种全大写）是真人自取的昵称，不能当乱码拒掉
     if any(w in t for w in TAG_WORDS):
@@ -434,6 +453,8 @@ def clean_name(text: str) -> str:
     t = STATUS_PATTERNS.sub("", t)
     t = re.sub(r"^[·|\-]+|[·|\-]+$", "", t)
     t = t[:12]
+    if t and (t in _DENY_NAMES or re.sub(r"\s+", "", t) in _DENY_NAMES):
+        return ""
     return t if is_plausible_name(t) else ""
 
 
@@ -722,3 +743,39 @@ def ask_vision(prompt: str, bgr, cfg: dict | None = None, log=print) -> dict:
     if isinstance(obj, dict) and "data" in obj and isinstance(obj["data"], dict):
         obj = obj["data"]
     return {"data": obj if isinstance(obj, dict) else {}, "usage": usage}
+
+def detect_account_name(img, cfg: dict | None = None, log=print) -> str:
+    """读取页面右上角的招聘者账号名（用于姓名黑名单）。
+
+    BOSS 顶部栏的账号名位于整屏右上角，DOM 因 iframe / 虚拟层级扫不到，
+    所以直接 OCR 那一小块区域（约 260x60），成本很低。
+    """
+    cfg = cfg or load_config()
+    h, w = img.shape[:2]
+    # 实测：账号名在顶栏右侧（x>55%、y<7%），同区域还有「招聘规范/我的客服」等菜单词
+    x0 = int(w * 0.55)
+    y1 = int(h * 0.07)
+    band = img[0:y1, x0:w]
+    if band.size == 0:
+        return ""
+    try:
+        txt = read_screen_text(band, dict(cfg, max_image_side=700)) or {}
+        raw = (txt.get("text") or "").strip()
+    except Exception:
+        return ""
+    MENU_CHARS = set("联系方式看板招聘数据面试规范客服权益消息帮助设置中心首页我的"
+                     "资讯报错账号简历搜索登录注册退出")
+    # 账号名在顶栏最右侧 → 取文本里最后一个像姓名的词
+    toks = [t for t in raw.replace("|", " ").split() if t]
+    cand = ""
+    for tok in reversed(toks):
+        name = clean_name(tok)
+        if not name or name.startswith("VIP"):
+            continue
+        if any(ch in MENU_CHARS for ch in name):
+            continue
+        cand = name
+        break
+    if cand:
+        log(f"  [姓名] 识别到招聘者账号名：{cand}（已加入排除名单）")
+    return cand

@@ -377,6 +377,29 @@ def _run_impl(live: bool, limit: int, max_scrolls: int | None = None, read: str 
     except ImportError:
         pass
 
+    # 姓名黑名单：先登记招聘者账号名（页面右上角），避免被当成候选人姓名
+    try:
+        import vlm as _vlm
+        _cfg = _vlm.load_config()
+        _acct = ""
+        try:
+            import cdp as _cdp1
+            if _cdp1.available():
+                _acct = _vlm.detect_account_name(_cdp1.shared().screenshot(), _cfg)
+        except Exception:
+            _acct = ""
+        _extra = list((_cfg or {}).get("deny_names") or [])
+        if _acct:
+            _extra.append(_acct)
+        if _extra:
+            _vlm.set_deny_names(_extra)
+            print(f"  [姓名] 排除名单：{'、'.join(dict.fromkeys(_extra))}")
+        else:
+            print("  [姓名] 未识别到招聘者账号名（可在 config.json 的 "
+                  "vision.deny_names 手工指定）")
+    except Exception as exc:
+        print(f"  [姓名] 账号名检测跳过：{exc}")
+
     winenv.enable_dpi_awareness()
     found = winenv.find_window("BOSS直聘")
     if not found and capture == "cdp":

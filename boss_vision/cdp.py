@@ -528,6 +528,32 @@ class CDP:
         img = Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
         return np.array(img)[:, :, ::-1].copy()
 
+    def account_name(self) -> str:
+        """读取页面右上角的登录账号名（招聘者本人）。找不到返回空串。"""
+        js = (
+            "(() => {"
+            " const W=innerWidth;"
+            " const out=[];"
+            " for (const el of document.querySelectorAll('span,div,a')) {"
+            "   const t=(el.textContent||'').trim();"
+            "   if (!t || t.length<2 || t.length>6) continue;"
+            "   if (!/^[\\u4e00-\\u9fa5·]{2,6}$/.test(t)) continue;"
+            "   const r=el.getBoundingClientRect();"
+            "   if (r.width<=0 || r.height<=0) continue;"
+            "   if (r.left < W*0.82 || r.top > 140) continue;"
+            "   out.push({t:t, x:Math.round(r.left), y:Math.round(r.top)});"
+            " }"
+            " out.sort((a,b)=>a.x-b.x);"
+            " return out.length ? out[0].t : '';"
+            "})()"
+        )
+        try:
+            res = self._call("Runtime.evaluate",
+                             {"expression": js, "returnByValue": True})
+            return str((res.get("result") or {}).get("value") or "").strip()
+        except Exception:
+            return ""
+
     def click_at(self, x: float, y: float, double: bool = False) -> None:
         """按 CSS 坐标点击（mac/Linux 的鼠标注入走这里）。"""
         self.click_css(x, y)
