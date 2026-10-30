@@ -680,3 +680,45 @@ def self_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(self_test())
+
+def ask_vision(prompt: str, bgr, cfg: dict | None = None, log=print) -> dict:
+    """视觉大模型直读：给图片 + 提示词，要求返回 JSON。
+
+    与 read_screen_text 的区别：
+        read_screen_text → 只出文字（再交给结构化模型）
+        ask_vision       → 一步出结构化 JSON（省一次调用，且能用提示词约束"只看哪块"）
+
+    返回 {"data": {...}, "usage": {...}}；失败时 data 为空字典。
+    """
+    cfg = cfg or load_config()
+    if not api_key(cfg):
+        return {"data": {}, "usage": {}}
+    max_side = int(cfg.get("max_image_side") or 1400)
+    data_uri = encode_image(bgr, max_side)
+    payload = {
+        "model": cfg.get("model") or "qwen3-vl-plus",
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": data_uri}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+        "temperature": 0,
+        "max_tokens": int(cfg.get("max_tokens") or 2000),
+    }
+    try:
+        res = _post(cfg, payload, api_key(cfg))
+    except Exception as exc:
+        log(f"[warn] 视觉直读失败：{exc}")
+        return {"data": {}, "usage": {}}
+    usage = res.get("usage") or {}
+    text = ""
+    try:
+        text = res["choices"][0]["message"]["content"]
+    except Exception:
+        pass
+    obj = extract_json(text) or {}
+    if isinstance(obj, dict) and "data" in obj and isinstance(obj["data"], dict):
+        obj = obj["data"]
+    return {"data": obj if isinstance(obj, dict) else {}, "usage": usage}
