@@ -135,6 +135,10 @@ def main() -> int:
         (app / "data").mkdir(parents=True, exist_ok=True)
         for f in data_src.glob("schools*"):
             shutil.copy2(f, app / "data" / f.name)
+    # 判定阈值文件（缺失时会回落到内置默认值，导致与开发机口径不一致）
+    rules = REPO / "data" / "screening-rules.json"
+    if rules.exists():
+        shutil.copy2(rules, app / "data" / "screening-rules.json")
     ex = REPO / "config.example.json"
     if ex.exists():
         shutil.copy2(ex, app / "config.json")      # 模板，不含真实密钥
@@ -148,6 +152,17 @@ def main() -> int:
         'set "PATH=%~dp0python;%~dp0python\\Library\\bin;%~dp0python\\DLLs;%PATH%"\r\n'
         'start "BOSS Collector Console" cmd /k ""%~dp0python\\python.exe" -E "%~dp0app\\boss_vision\\gui.py""\r\n',
         encoding="ascii")
+    # MCP 服务端（供 Claude 等客户端调用）
+    mcp = REPO / "mcp_server.py"
+    if mcp.exists():
+        shutil.copy2(mcp, app / "mcp_server.py")
+
+    # 文档
+    for doc in ("云端部署指南.md", "MAC-使用说明.md", "首次使用-Mac.txt"):
+        f = REPO / doc
+        if f.exists():
+            shutil.copy2(f, out / doc)
+
     edge = REPO / "run-edge-debug.cmd"
     if edge.exists():
         shutil.copy2(edge, out / "启动调试浏览器.cmd")
