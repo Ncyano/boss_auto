@@ -903,7 +903,22 @@ def _run_impl(live: bool, limit: int, max_scrolls: int | None = None, read: str 
                 import resume_reader as _rr_pre
                 import vlm as _vlm_pre
                 card_idx_pre = picked[0] if isinstance(picked, tuple) else picked
-                _nm = _rr_pre.card_name(winenv.grab_window(rect), p["cards"][card_idx_pre])
+                # 先尝试从 DOM 取卡片姓名（比 OCR 准，且不受页面文字干扰）
+                _nm = ""
+                try:
+                    import cdp as _cdp_n
+                    if _cdp_n.available():
+                        _c0 = p["cards"][card_idx_pre]
+                        _cx = _c0.x + min(60, _c0.w // 6)
+                        _cy = _c0.y + min(40, _c0.h // 4)
+                        _nm = _cdp_n.shared().name_at(_cx, _cy)
+                        if _nm:
+                            print(f"     DOM 卡片姓名: {_nm}")
+                except Exception:
+                    _nm = ""
+                if not _nm:
+                    _nm = _rr_pre.card_name(winenv.grab_window(rect),
+                                            p["cards"][card_idx_pre])
                 if _nm and _vlm_pre.is_plausible_name(_nm):
                     pre_card_name = _nm
             except Exception as exc:

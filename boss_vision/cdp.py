@@ -528,6 +528,42 @@ class CDP:
         img = Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
         return np.array(img)[:, :, ::-1].copy()
 
+    def name_at(self, x: float, y: float) -> str:
+        """取坐标所在列表卡片的候选人姓名（DOM，支持 iframe）。"""
+        js = (
+            "(() => {"
+            f" const X={float(x)}, Y={float(y)};"
+            " const cand=[];  // [document, offsetX, offsetY]"
+            " cand.push([document, 0, 0]);"
+            " for (const f of document.querySelectorAll('iframe')) {"
+            "   try { const d=f.contentDocument; if(!d) continue;"
+            "     const r=f.getBoundingClientRect();"
+            "     cand.push([d, r.left, r.top]); } catch(e) {} }"
+            " const re=/^[\\u4e00-\\u9fa5·]{2,6}$/;"
+            " for (const [d, ox, oy] of cand) {"
+            "   const el=d.elementFromPoint(X-ox, Y-oy);"
+            "   if(!el) continue;"
+            "   let sc=el;"
+            "   for (let i=0;i<6 && sc.parentElement;i++){"
+            "     sc=sc.parentElement;"
+            "     const t=(sc.innerText||'').trim();"
+            "     if (t.length>10) break; }"
+            "   const lines=(sc.innerText||'').split('\\n').map(s=>s.trim()).filter(Boolean);"
+            "   for (const line of lines.slice(0,6)) {"
+            "     if (re.test(line)) return line;"
+            "     const first=line.split(/[\\s|·]+/)[0];"
+            "     if (re.test(first)) return first;"
+            "   }"
+            " }"
+            " return ''; })()"
+        )
+        try:
+            res = self._call("Runtime.evaluate",
+                             {"expression": js, "returnByValue": True})
+            return str((res.get("result") or {}).get("value") or "").strip()
+        except Exception:
+            return ""
+
     def account_name(self) -> str:
         """读取页面右上角的登录账号名（招聘者本人）。找不到返回空串。"""
         js = (
