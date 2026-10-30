@@ -61,6 +61,14 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         else:
             print(f"  [warn] 缺少运行时数据: {rel}")
 
+    # 内置 Python 运行时（python-build-standalone，install_only）
+    mpy = ROOT / "data" / "macpython"
+    if mpy.exists():
+        for f in mpy.rglob("*.tar.gz"):
+            rel = f.relative_to(mpy)
+            z.write(f, f"{NAME}/python/{rel.as_posix()}")
+            added += 1
+
     # 离线依赖（macOS wheel）
     wh = ROOT / "data" / "wheelhouse"
     if wh.exists():

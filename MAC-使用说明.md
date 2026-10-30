@@ -18,7 +18,7 @@
 - 点击通过 CDP 的 `Input.dispatchMouseEvent` 派发，**不会移动你的真实鼠标**
 - 浏览器窗口**不能被最小化**（最小化后 Chromium 停止渲染，截图会超时）
 
-## 2. 安装（一次性，离线）
+## 2. 安装（一次性，全离线，**不需要系统 Python**）
 
 ```bash
 cd BOSS招聘助手-macOS源码-<时间>
@@ -26,39 +26,35 @@ chmod +x install-mac.sh run-mac.command run-browser-mac.command
 ./install-mac.sh
 ```
 
-**依赖已打包在 `wheelhouse/` 里，安装全程不需要联网**：
+包里自带 **Python 3.13 运行时**（python-build-standalone），解压到 `./python`
+即可使用，**不需要系统装 Python，也不需要管理员权限**。
+
+安装脚本的处理顺序：
+
+1. 若 `./python/bin/python3` 已存在 → 直接使用
+2. 否则解压 `python/<arch>/python.tar.gz` 到 `./python`
+3. 若包里没有运行时 → 回退系统 `python3.13` / `python3`
+4. 用该 Python 建 `.venv`，再用 `wheelhouse/<arch>` **离线**装依赖
+5. 自检 numpy / cv2 / PIL / openpyxl / cdp / kb / screening / judge / winenv / driver
+
+包内结构：
 
 ```
+python/
+├── arm64/python.tar.gz      Apple Silicon 用的 Python 3.13（24 MB）
+└── x86_64/python.tar.gz     Intel Mac 用的 Python 3.13（24 MB）
+
 wheelhouse/
-├── arm64/     Apple Silicon（M1/M2/M3/M4）
-│   ├── numpy-2.5.4-cp313-cp313-macosx_11_0_arm64.whl
-│   ├── opencv_python-4.14.0.94-cp37-abi3-macosx_13_0_arm64.whl
-│   ├── pillow-13.0.0-cp313-cp313-macosx_11_0_arm64.whl
-│   ├── openpyxl-3.1.5-py2.py3-none-any.whl
-│   └── et_xmlfile-2.0.0-py3-none-any.whl
-└── x86_64/    Intel Mac
-    └── （同上，x86_64 版本）
+├── arm64/    numpy / opencv / pillow / openpyxl / et_xmlfile
+└── x86_64/   同上
 ```
 
-脚本会：
-
-1. 检查 `python3`（需 3.10+）
-2. 按 `uname -m` 自动选择 `arm64` / `x86_64` 目录
-3. 创建 `.venv`
-4. `pip install --no-index --find-links wheelhouse/<arch>` 离线安装
-5. 自检 numpy / cv2 / PIL / openpyxl / cdp
-
-> 注意：wheel 是按 **CPython 3.13** 编的。如果你的 python3 是 3.11 或 3.12，
-> pip 会报「找不到匹配版本」。解决办法：
-> - 装 Python 3.13（推荐），或
-> - 联网安装：`./.venv/bin/pip install numpy opencv-python pillow openpyxl`
-
-如果提示「未找到 python3」：
-
-```bash
-xcode-select --install      # 装 Command Line Tools（自带 python3）
-# 或到 https://www.python.org/downloads/macos/ 下载安装
-```
+> 首次运行 `./python/bin/python3` 时，macOS 可能提示「无法验证开发者」。
+> 解决办法（任选其一）：
+> ```bash
+> xattr -dr com.apple.quarantine ./python
+> ```
+> 或 系统设置 → 隐私与安全性 → 仍要打开。
 
 ## 3. 配置
 
