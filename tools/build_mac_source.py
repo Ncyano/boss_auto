@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(".").resolve()
 STAMP = time.strftime("%Y%m%d-%H%M")
-NAME = f"BOSS招聘助手-macOS源码-{STAMP}"
+NAME = f"BOSS招聘助手-macOS12-{STAMP}"
 OUT = ROOT / "dist" / f"{NAME}.zip"
 OUT.parent.mkdir(exist_ok=True)
 
