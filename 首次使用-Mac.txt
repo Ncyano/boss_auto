@@ -1,0 +1,77 @@
+# macOS 双击即用 · 首次使用（30 秒）
+
+## 第一步：解压
+
+双击 zip 解压（用「归档工具」或「解压到当前文件夹」）。
+
+## 第二步：给脚本执行权限（只需一次）
+
+打开「终端」，把下面这行粘进去回车：
+
+```bash
+cd ~/Downloads/BOSS招聘助手-macOS*
+chmod +x *.command python/bin/* 2>/dev/null
+xattr -dr com.apple.quarantine .
+```
+
+> 为什么要这一步：从网络下载的文件带隔离标记，macOS 会阻止执行。
+> 如果你解压后直接双击提示「无法打开」，也是这个原因。
+
+## 第三步：启动浏览器
+
+双击 **run-browser-mac.command**
+
+- 会打开 Chrome/Edge
+- **在浏览器里登录 BOSS**（扫码或密码，只需一次）
+- 停在「推荐牛人」页面
+
+## 第四步：启动控制台
+
+双击 **启动-Mac.command**
+
+- 首次会自动解压 Python 运行时（约 2 秒）
+- 会弹出控制台窗口
+- 勾「后台模式」（默认已勾）→ 点「开始运行」
+
+## 常见问题
+
+**Q: 双击提示「无法打开，因为无法验证开发者」**
+A: 右键 → 打开 → 再点「打开」；或执行第二步的 `xattr` 命令。
+
+**Q: 提示「调试端口不可用」**
+A: 先双击 `run-browser-mac.command`，等浏览器打开并登录后再启动控制台。
+
+**Q: 双开浏览器后旧页面掉线**
+A: BOSS 是单会话的。跑批时不要在手机/别的浏览器登录同一账号。
+
+**Q: 想改目标人数 / 间隔**
+A: 在控制台界面里改，不用改文件。
+
+## 目录里都有什么
+
+```
+启动-Mac.command          ← 双击这个启动控制台
+run-browser-mac.command   ← 双击这个启动浏览器（先跑这个）
+install-mac.sh            ← 可选：装成 venv 环境（高级用户）
+libs/arm64 | libs/x86_64  ← 预解压好的依赖（无需 pip）
+python/arm64 | x86_64     ← 内置 Python 3.13 运行时（压缩包）
+boss_vision/              ← 程序代码
+运营助理知识库_v0.1/        ← 判定规则
+data/                     ← 学校名单
+config.example.json       ← 配置模板（首次运行会自动复制成 config.json）
+```
+
+## 需要填的 API key
+
+首次运行会生成 `config.json`，用文本编辑打开填两个 key：
+
+```json
+"vision": { "api_key": "sk-…（通义千问，用于读屏 OCR）" },
+"judge":  { "api_key": "sk-…（DeepSeek，用于结构化与判定）" }
+```
+
+命令打开：
+
+```bash
+open -e config.json
+```

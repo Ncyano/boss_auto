@@ -13,7 +13,8 @@ OUT = ROOT / "dist" / f"{NAME}.zip"
 OUT.parent.mkdir(exist_ok=True)
 
 INCLUDE_FILES = [
-    "install-mac.sh", "run-mac.command", "run-browser-mac.command",
+    "install-mac.sh", "run-mac.command", "run-browser-mac.command", "启动-Mac.command",
+    "首次使用-Mac.txt",
     "config.example.json", "requirements.txt", "README.md", "MAC-使用说明.md",
     "pyrightconfig.json", "mcp_server.py",
 ]
@@ -60,6 +61,18 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             added += 1
         else:
             print(f"  [warn] 缺少运行时数据: {rel}")
+
+    # 预解压依赖（免 pip）：libs/<arch>/...
+    libs = ROOT / "data" / "maclibs"
+    if libs.exists():
+        for arch_dir in libs.iterdir():
+            if not arch_dir.is_dir():
+                continue
+            for f in arch_dir.rglob("*"):
+                if f.is_file():
+                    z.write(f, f"{NAME}/libs/{arch_dir.name}/{f.relative_to(arch_dir).as_posix()}")
+                    added += 1
+        print(f"  已打包预解压依赖（libs/）")
 
     # 内置 Python 运行时（python-build-standalone，install_only）
     mpy = ROOT / "data" / "macpython"
