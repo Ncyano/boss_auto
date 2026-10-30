@@ -907,7 +907,8 @@ def _run_impl(live: bool, limit: int, max_scrolls: int | None = None, read: str 
                 _nm = ""
                 try:
                     import cdp as _cdp_n
-                    if _cdp_n.available():
+                    import settings as _st_n
+                    if _st_n.use_dom() and _cdp_n.available():
                         _c0 = p["cards"][card_idx_pre]
                         _cx = _c0.x + min(60, _c0.w // 6)
                         _cy = _c0.y + min(40, _c0.h // 4)

@@ -200,3 +200,12 @@ def self_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(self_test())
+
+
+def use_dom() -> bool:
+    """是否使用 DOM 辅助读取（默认关闭：按原来的 OCR 方式运行）。"""
+    try:
+        cfg = load()
+        return bool((cfg.get("vision") or {}).get("use_dom"))
+    except Exception:
+        return False

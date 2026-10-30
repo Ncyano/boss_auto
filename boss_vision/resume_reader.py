@@ -1456,7 +1456,8 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
     try:
         import dom_reader as _dr
         import cdp as _cdp
-        if _cdp.available():
+        import settings as _st
+        if _st.use_dom() and _cdp.available():
             side = _dr.read(_cdp.shared())
             if side.get("work") or side.get("education"):
                 ocr_parts = {"work": res.work, "education": res.education}
