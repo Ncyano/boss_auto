@@ -1452,6 +1452,31 @@ def read_resume_fast(rect, wide, log=print, max_screens: int = 10,
                                      + ("（含底部补采）" if len(crops) >= max_screens else ""))
         except Exception:
             pass
+    # ---- DOM 侧栏校正：公司/时间/学校以侧栏为准，OCR 只补职责 ----
+    try:
+        import dom_reader as _dr
+        import cdp as _cdp
+        if _cdp.available():
+            side = _dr.read(_cdp.shared())
+            if side.get("work") or side.get("education"):
+                ocr_parts = {"work": res.work, "education": res.education}
+                merged = _dr.merge(ocr_parts, side)
+                fixed = len(merged["work"]) - len(res.work)
+                if merged["work"]:
+                    log(f"  侧栏校正：工作 {len(merged['work'])} 条"
+                        + (f"（较 OCR {fixed:+d}）" if fixed else ""))
+                for note in merged.get("notes", [])[:3]:
+                    log(f"    ⚠ {note}")
+                res.work = merged["work"]
+                if not res.education and merged["education"]:
+                    res.education = merged["education"]
+                    log(f"  侧栏补教育：{len(merged['education'])} 条")
+                if side.get("name") and not res.name:
+                    res.name = side["name"]
+                    log(f"  姓名取自侧栏：{res.name}")
+    except Exception as exc:
+        log(f"  [warn] 侧栏校正跳过：{exc}")
+
     res.shots = [(i, c) for i, c in enumerate(crops)]
     res.stopped_reason = "快速读法完成"
     log(f"  结果：工作 {len(res.work)} 条 / 教育 {len(res.education)} 条")
