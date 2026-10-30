@@ -120,6 +120,41 @@ class Executor:
             pass
         self._client = None
 
+    def geometry(self) -> dict:
+        """返回分辨率无关的几何信息（云端据此做坐标换算）。
+
+        css_w / css_h  —— 布局视口（= 点击坐标系），与屏幕分辨率、DPI 无关
+        dpr / zoom     —— 设备像素比与页面缩放，view_w = css_w * dpr * zoom
+        """
+        c = self.client()
+        res = c._call("Page.getLayoutMetrics") or {}
+        lay = res.get("result") or res
+        css = lay.get("cssLayoutViewport") or {}
+        vis = lay.get("cssVisualViewport") or {}
+        g = {}
+        try:
+            g = c.geometry()
+        except Exception:
+            pass
+        img = None
+        try:
+            img = c.screenshot()
+        except Exception:
+            pass
+        view = list(img.shape[:2]) if hasattr(img, "shape") else [0, 0]
+        css_w = int(css.get("clientWidth") or g.get("iw") or 0)
+        css_h = int(css.get("clientHeight") or g.get("ih") or 0)
+        return {
+            "css_w": css_w,
+            "css_h": css_h,
+            "dpr": g.get("dpr") or 1,
+            "zoom": vis.get("zoom") or 1,
+            "scale": vis.get("scale") or 1,
+            "view_w": view[1],           # 截图宽（设备像素）
+            "view_h": view[0],           # 截图高
+            "ratio": round(view[1] / css_w, 4) if css_w else 0,
+        }
+
     def handle(self, msg: dict) -> dict:
         mid = msg.get("id")
         cmd = msg.get("cmd") or ""
@@ -136,7 +171,8 @@ class Executor:
                     ).decode()
                 else:
                     raise RuntimeError("截图返回类型异常")
-                return {"id": mid, "ok": True, "data": b64, "format": "jpg"}
+                return {"id": mid, "ok": True, "data": b64, "format": "jpg",
+                        "meta": self.geometry()}
             if cmd == "scroll":
                 x, y = int(msg.get("x") or 0), int(msg.get("y") or 0)
                 dy = int(msg.get("dy") or 0)
@@ -161,6 +197,8 @@ class Executor:
                                            "returnByValue": True})
                 return {"id": mid, "ok": True,
                         "data": (res.get("result") or {}).get("value")}
+            if cmd == "geometry":
+                return {"id": mid, "ok": True, "data": self.geometry()}
             if cmd == "reset":
                 self.reset()
                 return {"id": mid, "ok": True}
