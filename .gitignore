@@ -90,3 +90,7 @@ dist/
 data/maclibs/
 data/macpython/
 data/wheelhouse/
+
+data/maclibs312/
+data/macpython312/
+data/wheelhouse312/
